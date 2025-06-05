@@ -1,0 +1,450 @@
+---
+title: "Framework - Artigo Parapiqueria"
+author:
+  name: Gabriel Santos 
+params: 
+  update_dat:  !r paste(format(Sys.time(), '%Y-%m-%d (%H:%M:%S)'))
+  orig_dat: "05/08/2024"
+output: 
+  html_notebook: 
+    theme: paper
+    code_folding: hide
+    toc: true
+    toc_float:
+      collapsed: true
+    cache: true
+---
+
+**Criado em**: `r params$orig_dat`
+
+**Atualizado:** `r params$update_dat`
+
+\
+TESTE AQUI
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, digits=3) 
+```
+
+<!-- Start here -->
+
+```{r eval=FALSE, include=FALSE}
+rm(list=ls());gc()
+```
+
+# README
+
+1.  Creates an accessory function to automatize the implementation of
+    the Quadratic Programming inverse method (QP therefore)
+
+2.  Estimate survival, stasis and growth using the accessory function
+
+    1.  Step 1. Define the rules/constraints that must be given to the
+        QP - Quadratic programming
+
+        -   $C$, $b$ , non-zeros
+
+3.  Reach a best method to estimate recruitment, as it cannot be
+    directly estimated with QP
+
+4.  Apply QP and retrieve MPMs
+
+5.  Complement MPMs with recruitment
+
+6.  Calculate lambda and plot results
+
+7.  Population viability (more complete for the sake of relatório final
+
+    2024) 
+
+    <!-- -->
+
+    1.  Simulations with reducing vital rates'
+
+# Packages and SessionInfo
+
+```{r message=FALSE, warning=FALSE, paged.print=FALSE}
+library(popbio)
+library(ggplot2)
+library(tidyverse)
+library(openxlsx)
+library(ggrepel)
+library(ggridges)
+library(broom)
+
+set.seed(1)
+sessionInfo()
+
+```
+
+# 
+
+# Data Loading and standardization
+
+```{r}
+Mar22<-read.xlsx("Dados brutos/Dados parapiqueria - Completo - Consolidado 05Aug2024.xlsx",sheet="Março2022")
+Abr22<-read.xlsx("Dados brutos/Dados parapiqueria - Completo - Consolidado 05Aug2024.xlsx",sheet="Abril2022")
+Mai22<-read.xlsx("Dados brutos/Dados parapiqueria - Completo - Consolidado 05Aug2024.xlsx",sheet="Maio2022")
+
+### 2023
+Mar23<-read.xlsx("Dados brutos/Dados parapiqueria - Completo - Consolidado 05Aug2024.xlsx",sheet="Março2023")
+Abr23<-read.xlsx("Dados brutos/Dados parapiqueria - Completo - Consolidado 05Aug2024.xlsx",sheet="Abril2023")
+Mai23<-read.xlsx("Dados brutos/Dados parapiqueria - Completo - Consolidado 05Aug2024.xlsx",sheet="Maio2023")
+
+### 2024
+Mar24<-read.xlsx("Dados brutos/Dados parapiqueria - Completo - Consolidado 05Aug2024.xlsx",sheet="Março2024")
+Abr24<-read.xlsx("Dados brutos/Dados parapiqueria - Completo - Consolidado 05Aug2024.xlsx",sheet="Abril2024")
+Mai24<-read.xlsx("Dados brutos/Dados parapiqueria - Completo - Consolidado 05Aug2024.xlsx",sheet="Maio2024")
+
+```
+
+## Prepare final datasets: Merging censuses & summarise
+
+-   Step 1: Merge monthly censuses –\> Merge census across the years
+
+    Censuses are performed every March, April and May and need to merged
+    to produce a timeserie.
+
+    -   Dois datasets foram gerados:
+
+        -   Um para os valores totais
+
+        -   Outro para os valores máximo de indivíduos por plot
+
+-   Step 2: Pairing plots across timelags.
+
+    An important piece in the analyses is to make plots comparable
+    across years.
+
+    This script optimize these pairing
+
+### Merge censuses
+
+> Quadrants are not necessary for the analyses
+
+```{r message=FALSE, warning=FALSE}
+
+census2024<-rbind(
+  data.frame(Mar24,Month="3"),
+  data.frame(Abr24,Month="4"),
+  data.frame(Mai24,Month="5"))%>%
+  as_tibble()%>%
+  group_by(Site,Plot,Month)%>%    #Quadrants not included
+  summarise(Imaturos=sum(Imaturos),
+            Reprodutivos=sum(Reprodutivos))%>%
+  ungroup()
+
+
+### 2023
+census2023<-rbind(
+  data.frame(Mar23,Month="3"),
+  data.frame(Abr23,Month="4"),
+  data.frame(Mai23,Month="5"))%>%
+  as_tibble()%>%
+  group_by(Site,Plot,Month)%>%
+  summarise(Imaturos=sum(Imaturos),
+            Reprodutivos=sum(Reprodutivos))%>%
+  ungroup()
+
+### 2022
+census2022<-rbind(
+  data.frame(Mar22,Month="3"),
+  data.frame(Abr22,Month="4"),
+  data.frame(Mai22,Month="5"))%>%
+  select(Site,Plot,Imaturos,Reprodutivos,Month)
+
+census2022 # An example of a census merged along the year
+
+#----------------------------------------------------
+# Now merge the census across the years
+#----------------------------------------------------
+
+Census_all<-rbind(
+  cbind(census2024,year="2024"),
+  cbind(census2023,year="2023"),
+  cbind(census2022,year="2022"))%>%
+  pivot_longer(Imaturos:Reprodutivos,names_to="stage")
+
+
+#### Maximum number of individuals
+Census_all_max<-rbind(
+  cbind(census2024,year="2024"),
+  cbind(census2023,year="2023"),
+  cbind(census2022,year="2022"))%>%
+  group_by(Site,year,Plot)%>%
+  summarise(MaxIm=max(Imaturos),
+            MaxRep=max(Reprodutivos))%>%
+  mutate(MaxTot=ifelse(MaxIm>MaxRep,MaxIm,MaxRep))%>%
+  pivot_longer(MaxIm:MaxTot,names_to="stage")
+
+
+Census_all #View
+
+Census_all_max  #View
+```
+
+### Pairing censuses
+
+```{r message=FALSE, warning=FALSE}
+Timelags_base<-Census_all_max %>%
+  mutate(year = as.numeric(year)) %>%
+  group_by(Plot) %>%
+  arrange(year, stage) %>%
+  mutate(VAR = paste0(stage, ">", 
+                      lead(stage, order_by = interaction(year,stage)))) %>%
+# Armazena o ano inicial e o ano seguinte para o cálculo do intervalo de tempo
+  mutate(t0y = year,
+         t1y = lead(year, order_by = VAR))%>%   #lead acessa o próximo valor, logo o ano t+1 já que os valores estão em ordem
+  mutate(t0 = value, 
+         t1 = lead(value, order_by = VAR)) %>% 
+  # Filtra apenas os casos onde o ano seguinte (t1y) é maior que o ano inicial (t0y),
+  filter(t1y>t0y)%>%	#It only returns with timelag. Change interaction to return same year variables
+  arrange(Plot,VAR)
+
+#### Max Rep in t0 vs. MaxTot in t1
+#Pairing Maximum reprodutctive to Max Total
+
+RepTot<-left_join(
+  filter(Timelags_base,stage=="MaxRep")%>%select(Site:Plot,t0y,t0),
+  filter(Timelags_base,stage=="MaxTot")%>%select(Site:Plot,t1y,t1))%>%
+  mutate(VAR="MaxRep>MaxTot")%>%
+  select(VAR,Site:t0y,t1y,t0,t1)%>%	#Reorder columns
+  mutate(Site=as.factor(Site))%>%
+  mutate(period=as.factor(paste0(t0y,"-",t1y)))
+
+##### Max Rep in t0 vs. MaxIm in t1
+
+RepIm<-left_join(
+  filter(Timelags_base,stage=="MaxRep")%>%select(Site:Plot,t0y,t0),
+  filter(Timelags_base,stage=="MaxIm")%>%select(Site:Plot,t1y,t1))%>%
+  mutate(VAR="MaxRep>MaxIm")%>%
+  select(VAR,Site:t0y,t1y,t0,t1)%>%	#Reorder columns
+  mutate(Site=as.factor(Site))%>%
+  mutate(period=as.factor(paste0(t0y,"-",t1y)))
+
+RepTot # Exemplo de resultado
+```
+
+# Recruitment analyses
+
+## Packages
+
+```{r message=FALSE, warning=FALSE}
+library(lme4)
+library(DHARMa)
+library(performance)
+library(glmmTMB)
+library(MuMIn)
+
+options(na.action=na.fail)
+```
+
+## Maximum Reproductive \~ Maximum Immature
+
+Assessing if the maximum number of immature individuals in $t_1$ can be
+predicted by the maximum number of of reproductive in the year before
+$t_0$
+
+Negative binomial has the best fit
+
+```{html eval=FALSE, include=FALSE}
+<!--
+###  Poisson model worst performed and several warning message
+pois_RepIm<-glmmTMB::glmmTMB(t1~0+t0*Site+(1|period), 
+      family=poisson(link = "log"),data=RepIm)
+
+dredge(pois_RepIm)
+
+# RESULT
+  dsp((Int)) cnd(Sit)  cnd(t0) cnd(Sit:t0) df   logLik   AICc  delta weight
+4          +        + 0.005436              4 -642.156 1293.5   0.00  0.663
+8          +        + 0.004913           +  5 -641.522 1294.8   1.35  0.337
+2          +        +                       3 -714.134 1434.9 141.48  0.000
+3          +          0.004766              2 -750.634 1505.6 212.14  0.000
+-->
+```
+
+```{r message=FALSE, warning=FALSE, cache=TRUE}
+nb_RepIm<-glmmTMB::glmmTMB(t1~0+t0*Site+(1|period),
+                           family=nbinom2(link = "log"),data=RepIm)
+
+
+nb_RepIm_ls<-dredge(nb_RepIm)%>%get.models(subset=NA)
+
+nb_RepIm_df<-data.frame(
+  formula=format(cbind(lapply(nb_RepIm_ls,formula))),
+  Var="Rep>Tot",Dist="Neg.Bin",
+  AICcmodavg::aictab(nb_RepIm_ls))
+
+nb_RepIm_df
+```
+
+```{r}
+# Best model is t1~0+t0+Site+(1|census) Negative binomial
+BestModel<-update(nb_RepIm,t1~0+t0+Site+(1|period))
+BestModel%>%parameters::parameters(.,exponentiate =F)
+```
+
+Check differences between streams
+
+```{html eval=FALSE, include=FALSE}
+<!-- TO THINK ABOUT! 
+QUAL O MELHOR MODELO PARA ESTIMAR SE HÁ OU NÃO DIFERENÇA NO RECRUTAMENTO DE PARAPIQUERIA?
+
+BestModel Força o intercepto em zero porém com isso o modelo para de comparar diferenças entre sítios. 
+
+
+
+# Modelo
+glmmTMB::glmmTMB(t1~t0+Site+(1|period),       # Veja que o intercepto foi incluido (removi "0 + " da equação)
+                  family=nbinom2(link = "log"),data=RepIm)%>%summary()
+
+# RESULTADO
+             Estimate Std. Error z value Pr(>|z|)    
+(Intercept)  3.939961   0.273631  14.399   <2e-16 ***
+t0           0.007173   0.003201   2.241   0.0251 *  
+SiteS11B    -0.575314   0.229811  -2.503   0.0123 *         # Esse resultado indica claramente que há diferenças entre os riachos!
+
+-->
+```
+
+```{r}
+car::Anova(BestModel)
+```
+
+```{html eval=FALSE, include=FALSE}
+<!-- IMPORTANTE!
+Uma coisa que me gerou muita insegurança no passado e ainda é uma questão pra mim é se eu deveria ou não incluir o intercepto nesses modelos. 
+
+Uma análise mais atenciosa no entanto revela que essa não deveria ser uma questão. 
+# 
+O modelo por exemplo
+bestS11B(t1 ~ 0 + t0 + (1|period)) remove o intercepto e estima o efeito de beta t0 em 0.009382 
+Já com a remoção do intercepto o valor passa a ser 0.009047. 
+
+Quando convertido para o exponencial (para voltar a únidade de medida de individuos) temos então 1.009426 e 1.009088 respectivamente. Uma diferença de 0.000338, que PROVAVELMENTE é irrelevante para o modelo.
+
+
+De forma similar temos 
+
+
+beta t0 = 0.007173 em BestModel (modelo global que compara entre sítios e remove o intercepto)
+e  temos exatamente o mesmo valor (beta t0 =  0.007173) para o modelo incluindo o intercepto!
+
+Eles são o mesmo? Sim porém ao incluir o intercept somos também capazes de ter uma estimativa direta da diferença entre os modelos
+             Estimate Std. Error z value Pr(>|z|)    
+(Intercept)  3.939961   0.273631  14.399   <2e-16 ***
+t0           0.007173   0.003201   2.241   0.0251 *  
+SiteS11B    -0.575314   0.229811  -2.503   0.0123 *       # Fica claro que os recrutamentos são diferentes!!!
+
+enquanto que ao incluir o intercepto temos 
+Conditional model:
+         Estimate Std. Error z value Pr(>|z|)    
+t0       0.007173   0.003201   2.241   0.0251 *  
+SiteS11C 3.939963   0.273631  14.399   <2e-16 ***
+SiteS11B 3.364650   0.297025  11.328   <2e-16 ***
+
+O modelo apesar de parecer apresentar resultados diferentes não o faz. Pq se diminuiirmos beta SiteS11C e beta SiteS11B temos exatamente a diferença de Beta siteS11B calculada quando temos o intercepto
+
+SiteS11B-SiteS11C =  3.364650 - 3.939963 = -0.575314
+
+-->
+```
+
+```{r}
+# Apply the same structure of the best model but for each stream
+bestS11B<-update(BestModel,~0+t0+(1|period), data=filter(RepIm,Site=="S11B"))
+bestS11C<-update(BestModel,~0+t0+(1|period), data=filter(RepIm,Site=="S11C"))
+```
+
+# Continuar da Linha 265 do script "Script viabilidade populacional - Relatório"
+
+```{r}
+m2<-update(nb_RepIm,t1~0+t0+Site+(1|period))
+m3<-update(nb_RepIm,t1~0+t0+Site*period) 
+
+```
+
+```{r eval=FALSE, include=FALSE}
+
+ggeffects::predict_response(
+  BestModel,terms=c("t0[0:208]", #[0,208] represent the minimum and maximum individuals record in plot per month and pear stage(?)
+          "Site","period"))%>%plot()
+
+```
+
+# Inverse model implementation
+
+## Accessory function - `WoodPar`
+
+Automatically detects C, b, and non-zero elements
+
+Function parameters include:
+
+-   ven is the target MPM
+
+-   myC2ven make matrix $C$
+
+    -   myC2ven must be make in two parts because it is not a simple
+        identity matrix
+
+-   mynonzero.ven determines the non-zero elements
+
+-   $b$ elements <!-- Preciso melhorar a explicação-->
+
+<!--# BUG: Função ainda em desenvolvimento, parece não funcionar para matrizes 2x2 ainda. Não sei pq isso ocorre! -->
+
+```{r}
+WoodPar<-function(ven){
+  mynonzero.ven<- which(ven> 0)	#Determina quem non-zero elementos da matriz de transição (subdiagonal + classes que reproduzem)
+  myC2ven.part1<-diag(-1,length(mynonzero.ven))
+  myC2ven.part2<-(numeric(dim(ven)[1]))%*%t(numeric(length(mynonzero.ven)))		#MODIFICADO!
+  diag(myC2ven.part2[,-c(seq(from=1,to=ncol(myC2ven.part2),by=1))])<-1			#+RECENTE
+  diag(myC2ven.part2[,-c(seq(from=0,to=(ncol(myC2ven.part2)),by=1))])<-1			#+RECENTE
+  myC2ven.part2<-as.data.frame(myC2ven.part2)
+  venR<-replacing(ven)
+  colnames(myC2ven.part2)<-venR[mynonzero.ven]
+  myC2ven.part2<-replace(myC2ven.part2, which(colnames(myC2ven.part2)=="F"),numeric(dim(myC2ven.part2)[[1]]))
+  myC2ven.part2<-as.matrix(myC2ven.part2)
+  colnames(myC2ven.part2)<-NULL
+  myC2ven<-rbind(myC2ven.part1,myC2ven.part2)
+  myb.ven<- apply(myC2ven, 1, max)
+  out<-list(myC2ven,myb.ven,mynonzero.ven)
+  names(out)<-c("C","b","nonzero")
+  return(out)
+}
+#'=======================================================
+
+```
+
+## Example - Model Toy
+
+-   Simulate an hypothetical population to assess model's accuracy
+
+-   **Must run in order to determine C, non-zero elements and b which
+    will be used to estimate survival**
+
+    -   Hypothetical population was created based on the matrix
+        structure we expect for Parapiqueria.
+
+    -   Matrix is
+
+        -   2x2
+
+        -   divided in juveniles and adults
+
+        -   Does note includes recruitment because it cannot be
+            estimated within year (March-May)
+            <!-- Isso é bem importante pq é aqui que está o segredo do nosso modelo -->
+
+-   Also, contain model validation
+
+```{r}
+file.edit("ModelToyv1.R")
+source("ModelToyv1.R")
+```
+
+# Glossary
+
+C
+
+:   C: is a matrix somehow
