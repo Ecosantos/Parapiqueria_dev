@@ -970,44 +970,44 @@ lapply(StochA,lambda)%>%unlist%>%range
 
 Check lambda
 
-```{r, code_folding="hide", result="asis"}
+```{r, code_folding="hide", result="hold"}
 par(mfrow=c(2,2))
 
 # Simulated data
 hist(unlist(lapply(StochA, lambda)),
      freq = FALSE,ylim=c(0,3),
-     breaks=c(0, 0.33, 0.70, 1.00, 1.31, 1.66, 2.00, 2.31, 2.65, 3.00),
-     main="Simulated data",xlab="Population growth rate (lambda)")
+     breaks=c(0, 0.33, 0.70, 1.00, 1.31, 1.66, 2.00, 2.31, 2.65, 3.2),
+     main="Simulated data", xlab="Population growth rate (lambda)")
 
 #S11B
 hist(unlist(lapply(mpm_list_recruit_S11B, lambda)),
      freq = FALSE,ylim=c(0,3),col=alpha("#ff9211", 0.2),
-     breaks=c(0, 0.33, 0.70, 1.00, 1.31, 1.66, 2.00, 2.31, 2.65, 3.00),
+     breaks=c(0, 0.33, 0.70, 1.00, 1.31, 1.66, 2.00, 2.31, 2.65,  3.2),
      main="S11B",xlab="Population growth rate (lambda)")
 #S11C
 
 hist(unlist(lapply(mpm_list_recruit_S11C, lambda)),
      freq = FALSE,ylim=c(0,3),col=alpha("#6e86e7", 0.2),
-     breaks=c(0, 0.33, 0.70, 1.00, 1.31, 1.66, 2.00, 2.31, 2.65, 3.00),
+     breaks=c(0, 0.33, 0.70, 1.00, 1.31, 1.66, 2.00, 2.31, 2.65,  3.2),
      main="S11C",xlab="Population growth rate (lambda)")
 
 # All
 hist(unlist(lapply(StochA, lambda)),
      freq = FALSE,ylim=c(0,3),
-     breaks=c(0, 0.33, 0.70, 1.00, 1.31, 1.66, 2.00, 2.31, 2.65, 3.00),
+     breaks=c(0, 0.33, 0.70, 1.00, 1.31, 1.66, 2.00, 2.31, 2.65,  3.2),
      main="ALL",xlab="Population growth rate (lambda)")
 
 hist(unlist(lapply(mpm_list_recruit_S11B, lambda)),
      freq = FALSE,add=T,col=alpha("#ff9211", 0.2),
-     breaks=c(0, 0.33, 0.70, 1.00, 1.31, 1.66, 2.00, 2.31, 2.65, 3.00))
+     breaks=c(0, 0.33, 0.70, 1.00, 1.31, 1.66, 2.00, 2.31, 2.65,  3.2))
 
 hist(unlist(lapply(mpm_list_recruit_S11C, lambda)),
      freq = FALSE,add=T,col=alpha("#6e86e7", 0.2),
-     breaks=c(0, 0.33, 0.70, 1.00, 1.31, 1.66, 2.00, 2.31, 2.65, 3.00))
+     breaks=c(0, 0.33, 0.70, 1.00, 1.31, 1.66, 2.00, 2.31, 2.65,  3.2))
 
 ```
 
-## 9.4. Extinction growth rate
+## 9.4. Extinction growth rate 
 
 ```{r}
 resultado<-stoch.quasi.ext(StochA, 
@@ -1017,9 +1017,9 @@ resultado<-stoch.quasi.ext(StochA,
               tmax = 10, nreps=100)
 resultado
 
-matplot(resultado, xlab="Years", ylab="Probabilidade cumulativa de se extinguir", 
+matplot(resultado, xlab="Years", ylab="Cumulative extinction risk (%)", 
         type='l', lty=1, col="grey20", las=1,
-        main="Probabilidade cumulativa ao longo do ano de atravessar o treshold de 10% da população inicial")
+        main="Extinction risk \n (cross extinction threshold of 10% initial population")
 
 ```
 
