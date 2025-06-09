@@ -46,7 +46,7 @@ options(knitr.table.format = "html")
 rm(list=ls());gc()
 ```
 
-# README 
+# README
 
 <!--#  Reorganizar essa ordem e atualizar os novos tópicos adicionados: elasticidade e LTRE-->
 
@@ -112,13 +112,15 @@ Mai24<-read.xlsx("Dados brutos/Dados parapiqueria - Completo - Consolidado 05Aug
 
     Censuses are performed every March, April and May and need to merged to produce a timeserie.
 
-    -    Two datasets were produced
+    -   Two datasets were produced
 
-        -   A timeserie (Mar-May) to run QPmat
+    ```         
+    -   A timeserie (Mar-May) to run QPmat
 
-        -   A maximum number of individuals each year to estimate recruitment
+    -   A maximum number of individuals each year to estimate recruitment
 
-            -   Censuses from different years must be paired
+        -   Censuses from different years must be paired
+    ```
 
 ## 2.2. Merge censuses
 
@@ -455,7 +457,7 @@ Function parameters include:
 
 -   mynonzero.ven determines the non-zero elements
 
--   $b$ elements <!-- Preciso melhorar a explicação-->
+-   $b$ elements <!--# Preciso melhorar a explicação-->
 
     <!--# BUG: Função ainda em desenvolvimento, parece não funcionar para matrizes 2x2 ainda. Não sei pq isso ocorre! -->
 
@@ -484,11 +486,11 @@ WoodPar<-function(ven){
 
 -   Simulate an hypothetical population to assess model's accuracy
 -   **Must run in order to determine C, non-zero elements and b which will be used to estimate survival**
-    -   Hypothetical population was created based on the matrix structure we expect for Parapiqueria.
+    -   Hypothetical population was created based on the matrix structure we expect for *Parapiqueria*.
     -   Matrix is
         -   2x2
         -   divided in juveniles and adults
-        -   Does note includes recruitment because it cannot be estimated within year (March-May) <!-- Isso é bem importante pq é aqui que está o segredo do nosso modelo -->
+        -   Does note includes recruitment because it cannot be estimated within year (March-May) <!--# Isso é bem importante pq é aqui que está o segredo do nosso modelo -->
 -   Also, contain model validation
 
 ```{r include=FALSE, echo=TRUE}
@@ -771,7 +773,7 @@ statrep(., group_vars = c("Site", "year"),value_var = "Lambda")
 lambsSite_df
 ```
 
-```{r}
+```{r include=FALSE}
 lambsPlot<-lambsSite_df%>%
 mutate(VAR="PopGrowthRate")%>%
 ggplot(.,aes(y=Mean,x=VAR,group=year))+
@@ -790,9 +792,9 @@ xlab(NULL)+ylab(NULL)
 lambsPlot
 ```
 
-## 8. Applying demographic tools: elasticity and LTRE
+# 8. Applying demographic tools: elasticity and LTRE
 
-### 8.1. Elasticities of mean demographic parameters
+## 8.1. Elasticities of mean demographic parameters
 
 ```{r, result="asis"}
 
@@ -806,10 +808,306 @@ elasticity(mean(mpm_list_recruit_S11B))
 elasticity(mean(mpm_list_recruit_S11C))
 ```
 
-### 8.2. Life Table Response Experiment (LTRE)
+## 8.2. Life Table Response Experiment (LTRE)
+
+```{r}
+LTRE(mean(mpm_list_recruit_S11B), mean(mpm_list_recruit_S11C))
+```
+
+## 8.2. Life table response by year
 
 ```{r}
 
+LTREyear<-list(
+  #2022
+LTRE(
+mean(mpm_list_recruit_S11B[grep("2022$", names(mpm_list_recruit_S11B), value = TRUE)]),
+mean(mpm_list_recruit_S11C[grep("2022$", names(mpm_list_recruit_S11C), value = TRUE)])),
+
+#2023
+LTRE(
+mean(mpm_list_recruit_S11B[grep("2023$", names(mpm_list_recruit_S11B), value = TRUE)]),
+mean(mpm_list_recruit_S11C[grep("2023$", names(mpm_list_recruit_S11C), value = TRUE)])),
+
+#2024
+LTRE(
+mean(mpm_list_recruit_S11B[grep("2024$", names(mpm_list_recruit_S11B), value = TRUE)]),
+mean(mpm_list_recruit_S11C[grep("2024$", names(mpm_list_recruit_S11C), value = TRUE)]))
+)
+
+#Mean
+LTREyear%>%mean()
+
+#Variance
+LTREyear%>%popbio::var2()
+
+```
+
+# 9. Extinction risk
+
+Three steps must be performed first:
+
+1\. Define the initial number of individuals based on the mean value of immatures and reproductives
+
+2 Simulate vital rates to include in the model
+
+3\. Create a set of matrices with these new estimated variables
+
+## 9.1. Define the initial number of individuals
+
+```{r}
+Mean_indiv<-Census_all_max%>%
+  #filter(  Remove 1% dos dados para evitar outliers
+  #  value < quantile(value,.995) & 
+  #  value > quantile(value,.005))%>%
+  group_by(stage)%>%
+  summarise(Mean=mean(value),
+            Median=median(value),
+            sd=sd(value))
+
+Mean_indiv
+```
+
+## 9.2. Simulate the vital rates
+
+-   Simulate binomial distribution values from recruitment based on the best model
+
+-   Simulate Survival, growth and stasis based on a beta distribution using beta function in `popbio` package
+
+```{r}
+BestModel_coef<-(BestModel%>%summary%>%coef)$cond%>%exp()
+
+
+#BestModel_coef[1,1]  # Check best model coeficients
+#BestModel_coef[1,2]
+
+# Simulating recruitment
+rec_sim<-
+  0.1+    #A small factor has been added to make sure individuals will not recruit zero indivíduals
+  rnbinom(1000, 
+          mu =   BestModel_coef[1,1],
+          size = sigma(BestModel) #Desviation in the model
+  )
+
+
+# Simulating U matrices values
+mean_vrs_period<-mean(mpm_list)
+var_vrs_period<-var2(mpm_list)
+
+s1_sim<-replicate(1000,betaval(mean_vrs_period[1],var_vrs_period[1]))
+s2_sim<-replicate(1000,betaval(mean_vrs_period[2],var_vrs_period[2]))
+s3_sim<-replicate(1000,betaval(mean_vrs_period[4],var_vrs_period[4]))
+```
+
+### 9.2.1. Visual validation of simulated parameters
+
+```{r, result="hold"}
+par(mfrow=c(2,2))
+  s1_sim%>%hist(main="stasis")
+  abline(v=mean_vrs_period[1],col="red")
+  
+  s2_sim%>%hist(main="growth")
+  abline(v=mean_vrs_period[2],col="red")
+  
+  s3_sim%>%hist(main="survival")
+  abline(v=mean_vrs_period[2],col="red")
+  
+  hist(rec_sim,breaks=30,main="Recrutamento",freq=F)  #Simulated recruitment
+  (RepIm$t1/RepIm$t0)%>%hist(breaks=30,freq=F,add=T,col=alpha("orange",0.6))  #Observed recruitment
+  abline(v=exp(parameters::parameters(BestModel)[1,2]),col="red") #Esimated recruitment
+
+```
+
+## 9.3. Produce simulated MPMs
+
+-   Based on the simulated vital rates produced, we can now produce the simulated MPMs.
+
+Define de stages and the MPM format
+
+```{r}
+
+stages<-c("seed","Juvenile","Adult")
+
+lifecycle_para <- expression(matrix2(c(
+  s1,  recruit,
+  s2, s3  ),   stages[-1] ))
+
+vrstoch<-function(){
+  vr <- list( s1=sample(s1_sim)[1],
+              s2=sample(s2_sim)[1],
+              s3=sample(s3_sim)[1],
+              recruit=sample(rec_sim)[1])
+  return(vr)
+}
+
+#Check if MPM is being built
+
+eval(lifecycle_para, vrstoch())
+
+```
+
+### 9.3.1 Simulate several MPMs
+
+```{r}
+#Create the matrices
+StochA_sim<-replicate(10000,(eval(lifecycle_para, vrstoch())))
+
+StochA <- lapply(seq(dim(StochA_sim)[3]), function(i) StochA_sim[,,i])
+
+StochA[[1]]
+
+
+# Mean lambda
+lapply(StochA,lambda)%>%unlist%>%mean
+
+
+# Lambda range
+lapply(StochA,lambda)%>%unlist%>%range
+
+```
+
+### 9.3.2. Check values
+
+Check lambda
+
+```{r, code_folding="hide", result="asis"}
+par(mfrow=c(2,2))
+
+# Simulated data
+hist(unlist(lapply(StochA, lambda)),
+     freq = FALSE,ylim=c(0,3),
+     breaks=c(0, 0.33, 0.70, 1.00, 1.31, 1.66, 2.00, 2.31, 2.65, 3.00),
+     main="Simulated data",xlab="Population growth rate (lambda)")
+
+#S11B
+hist(unlist(lapply(mpm_list_recruit_S11B, lambda)),
+     freq = FALSE,ylim=c(0,3),col=alpha("#ff9211", 0.2),
+     breaks=c(0, 0.33, 0.70, 1.00, 1.31, 1.66, 2.00, 2.31, 2.65, 3.00),
+     main="S11B",xlab="Population growth rate (lambda)")
+#S11C
+
+hist(unlist(lapply(mpm_list_recruit_S11C, lambda)),
+     freq = FALSE,ylim=c(0,3),col=alpha("#6e86e7", 0.2),
+     breaks=c(0, 0.33, 0.70, 1.00, 1.31, 1.66, 2.00, 2.31, 2.65, 3.00),
+     main="S11C",xlab="Population growth rate (lambda)")
+
+# All
+hist(unlist(lapply(StochA, lambda)),
+     freq = FALSE,ylim=c(0,3),
+     breaks=c(0, 0.33, 0.70, 1.00, 1.31, 1.66, 2.00, 2.31, 2.65, 3.00),
+     main="ALL",xlab="Population growth rate (lambda)")
+
+hist(unlist(lapply(mpm_list_recruit_S11B, lambda)),
+     freq = FALSE,add=T,col=alpha("#ff9211", 0.2),
+     breaks=c(0, 0.33, 0.70, 1.00, 1.31, 1.66, 2.00, 2.31, 2.65, 3.00))
+
+hist(unlist(lapply(mpm_list_recruit_S11C, lambda)),
+     freq = FALSE,add=T,col=alpha("#6e86e7", 0.2),
+     breaks=c(0, 0.33, 0.70, 1.00, 1.31, 1.66, 2.00, 2.31, 2.65, 3.00))
+
+```
+
+## 9.4. Extinction growth rate
+
+```{r}
+resultado<-stoch.quasi.ext(StochA, 
+              n0 = Mean_indiv$Median[1:2], 
+              Nx=Mean_indiv[3,3]/10,
+              maxruns=10,
+              tmax = 10, nreps=100)
+resultado
+
+matplot(resultado, xlab="Years", ylab="Probabilidade cumulativa de se extinguir", 
+        type='l', lty=1, col="grey20", las=1,
+        main="Probabilidade cumulativa ao longo do ano de atravessar o treshold de 10% da população inicial")
+
+```
+
+## 9.5 Simulating different scenarios
+
+Create a function to automatise the vital rates reduction. This function is a adaptation of `stoch.quasi.ext` from `popbio` package.
+
+This adaptation includes the parameter "damage" with a vector informing scenarios of vital rates reduction. Note all vital rates are impacted together.
+
+```{r}
+Myviab_func<-function (matrices, n0, Nx, tmax = 50, maxruns = 10, nreps = 5000, 
+                       prob = NULL, sumweight = NULL, verbose = TRUE,damage=damage) {
+  damage=damage
+  if (is.list(matrices)) {
+    matrices <- matrix(unlist(matrices), ncol = length(matrices))
+  }
+  x <- length(n0)
+  if (is.null(sumweight)) {
+    sumweight <- rep(1, x)
+  }
+  y <- dim(matrices)[2]
+  ext <- matrix(numeric(maxruns * tmax), ncol = maxruns)
+  for (h in 1:maxruns) {
+    if (verbose) {
+      message("Calculating extinction probability for run ", 
+              h)
+    }
+    prob.ext <- numeric(tmax)
+    for (i in 1:nreps) {
+      n <- n0
+      for (t in 1:tmax) {
+        col <- sample(1:y, 1, prob = prob)
+        A <- matrix(matrices[, col], nrow = x)
+        n <- ((A-(A*damage)) %*% n)
+        N <- sum(sumweight * round(n))
+        if (N < Nx) {
+          prob.ext[t] <- prob.ext[t] + 1
+          break
+        }
+      }
+    }
+    prob.ext <- cumsum(prob.ext/nreps)
+    ext[, h] <- prob.ext
+  }
+  ext
+}
+```
+
+-   Define de impacts. a sequence of impact from 0% to 5% reduction in vital rates
+
+```{r}
+sim_damage<-seq(0,0.5,by=0.05)
+sim_damage
+
+```
+
+```{r}
+
+temp<-NULL
+out<-NULL
+tmax=11   #Years simulated
+for(i in 1:length(sim_damage)){
+temp<-Myviab_func(StochA, 
+           n0 = Mean_indiv$Median[1:2], 
+           Nx=Mean_indiv[3,3]/10,        #Mean_indiv[3,3]/10 representa 10% dos indivíduos médios
+           maxruns=10,                   # Number of replications on each simulation
+           tmax = tmax, nreps=1000,
+           damage=sim_damage[i])
+out[[i]]<-data.frame(MEAN=apply(temp,1,mean),
+                     SD=apply(temp,1,sd),
+                     Dano=sim_damage[i],
+                     t=seq(1,tmax,by=1))
+print(paste0("Performing simulation at damage ",sim_damage[i]*100,"%" ))
+}
+
+```
+
+```{r}
+out[[1]]
+```
+
+```{r}
+viab_para<-do.call(rbind,out)%>%
+  mutate(PROP=100-(MEAN*100),
+         ymin=100-((MEAN-SD)*100),
+         ymax=100-((MEAN+SD)*100))
+
+viab_para
 ```
 
 # Glossary
