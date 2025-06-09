@@ -1015,12 +1015,91 @@ resultado<-stoch.quasi.ext(StochA,
               Nx=Mean_indiv[3,3]/10,
               maxruns=10,
               tmax = 10, nreps=100)
-resultado
-
 matplot(resultado, xlab="Years", ylab="Cumulative extinction risk (%)", 
         type='l', lty=1, col="grey20", las=1,
         main="Extinction risk \n (cross extinction threshold of 10% initial population")
 
+```
+
+```{r}
+n_init<-c(50,50) # define initial population
+n_threshold<-sum(n_init)*.10 # Define extinction threshold: 10% of the initial population size
+
+#Project population for 10 years based on estimated parameters
+projS11B_10<-stoch.projection(mpm_list_recruit_S11B, 
+                              n_init,	#Estabelece meio indivíduo em cada estágio,logo, ao somar, teriamos quanto que a população doubrou,triplicou...
+                              #	stable.stage(mean(mpm_list_recruit_S11B))*100,
+                              tmax=10,nreps=1000)
+
+projS11B_30<-stoch.projection(mpm_list_recruit_S11B, 
+                              n_init,tmax=30,nreps=1000)
+
+#Project population for 30 years based on estimated parameters
+projS11C_10<-stoch.projection(mpm_list_recruit_S11C, 
+                              n_init,tmax=10,nreps=1000)
+
+projS11C_30<-stoch.projection(mpm_list_recruit_S11C, 
+                              n_init,tmax=10,nreps=1000)
+
+
+
+projALL_10<-stoch.projection(c(mpm_list_recruit_S11B,mpm_list_recruit_S11C),
+                             n_init,tmax=10,nreps=1000)
+
+projALL_30<-stoch.projection(c(mpm_list_recruit_S11B,mpm_list_recruit_S11C),
+                             n_init,tmax=10,nreps=1000)
+```
+
+```{r}
+#'-------------------------------------------------------------------------
+# Create proptable_modif a special prop table ------------------
+#'-------------------------------------------------------------------------
+## Rationale  --------------
+# proptable_modif is an adaptation of default prop.table
+# This function allow to include FALSE or TRUE when there is no legitime true or false extinction 
+#'-------------------------------------------------------------------------
+proptable_modif <- function(data, threshold) {
+  # equivalent to prop.table(table(apply(data,1,sum)> n_threshold))*100
+  res <- table(factor(apply(data, 1, sum) > threshold, levels = c(FALSE, TRUE)))
+  # Equivalent to prop.table(ext10.probS11B)*100
+  prop <- prop.table(res) * 100
+  return(prop)
+}
+##'-------------------------------------------------------------------------
+
+apply(projS11C_30,1,sum)%>%range()
+apply(projS11B_30,1,sum)%>%range()
+
+
+# Chi-square of extinction rate between streams
+data.frame(rbind(
+  proptable_modif(projS11B_10, n_threshold),
+  proptable_modif(projS11C_10, n_threshold)),
+  row.names = c("S11B", "S11C"))%>%
+  print()%>%chisq.test()
+
+data.frame(rbind(
+  proptable_modif(projS11B_30, n_threshold),
+  proptable_modif(projS11C_30, n_threshold)),
+  row.names = c("S11B", "S11C"))%>%
+  print()%>%chisq.test()
+```
+
+> Os resultados do nosso modelo indicam que **mesmo na ausência de impacto, há uma pequena probabilidade de extinção local das populações (0.11%) em quatro anos**, **aumentando para até 3.45% em 10 anos**. Esses resultados são coerentes com os censos observados em campo. Por exemplo, todos os indivíduos desapareceram da parcela 15 riacho S11B no ano de 2024 (equivalente a uma extinção local nessa parcela). A redução das taxas vitais aumentou a probabilidade de extinção (Figura 7), sendo 14% no cenário onde as taxas vitais foram reduzidas em 10%. Diferente de Ipomoea cavalcantei, onde a redução do crescimento populacional se iniciou apenas no cenário no qual as taxas vitais foram reduzidas acima de de 25%; uma redução de 25% das taxas vitais em P. cavalcantei resultou um efeito muito mais dramático, reduzindo a probabilidade de viabilidade das populações para menos de 50% (46,17%; Figura 7). Padrão similar foi observado quando comparamos as consequências genéticas devido às reduções no tamanho população de ambas as espécies (ver resultado no tópico - Consequências genéticas da redução populacional).Os resultados do nosso modelo indicam que mesmo na ausência de impacto, há uma pequena probabilidade de extinção local das populações (0.11%) em quatro anos, aumentando para até 3.45% em 10 anos. Esses resultados são coerentes com os censos observados em campo. Por exemplo, todos os indivíduos desapareceram da parcela 15 riacho S11B no ano de 2024 (equivalente a uma extinção local nessa parcela). A redução das taxas vitais aumentou a probabilidade de extinção (Figura 7), sendo 14% no cenário onde as taxas vitais foram reduzidas em 10%. Diferente de Ipomoea cavalcantei, onde a redução do crescimento populacional se iniciou apenas no cenário no qual as taxas vitais foram reduzidas acima de de 25%; uma redução de 25% das taxas vitais em P. cavalcantei resultou um efeito muito mais dramático, reduzindo a probabilidade de viabilidade das populações para menos de 50% (46,17%; Figura 7). Padrão similar foi observado quando comparamos as consequências genéticas devido às reduções no tamanho população de ambas as espécies (ver resultado no tópico - Consequências genéticas da redução populacional).
+
+```{r}
+rbind(
+  data.frame(projS11B_10,Site="S11B"),
+  data.frame(projS11C_10,Site="S11C"))%>%
+  mutate(total=rowSums(select_if(., is.numeric), na.rm = TRUE))%>%
+  mutate(Mean=mean(total),
+         Median=median(total))%>%
+  ggplot(.,aes(x=total,group=Site))+
+  geom_histogram(
+    aes(y=..count../sum(..count..),
+        fill=Site),
+    position = 'identity',color="black",alpha=.3)+
+  scale_fill_manual(values=c("#6e86e7","#ff9211"))
 ```
 
 ## 9.5 Simulating different scenarios
@@ -1076,38 +1155,27 @@ sim_damage
 
 ```
 
-```{r}
-
-temp<-NULL
-out<-NULL
-tmax=11   #Years simulated
-for(i in 1:length(sim_damage)){
-temp<-Myviab_func(StochA, 
-           n0 = Mean_indiv$Median[1:2], 
-           Nx=Mean_indiv[3,3]/10,        #Mean_indiv[3,3]/10 representa 10% dos indivíduos médios
-           maxruns=10,                   # Number of replications on each simulation
-           tmax = tmax, nreps=1000,
-           damage=sim_damage[i])
-out[[i]]<-data.frame(MEAN=apply(temp,1,mean),
-                     SD=apply(temp,1,sd),
-                     Dano=sim_damage[i],
-                     t=seq(1,tmax,by=1))
-print(paste0("Performing simulation at damage ",sim_damage[i]*100,"%" ))
-}
-
-```
-
-```{r}
-out[[1]]
-```
-
-```{r}
-viab_para<-do.call(rbind,out)%>%
-  mutate(PROP=100-(MEAN*100),
-         ymin=100-((MEAN-SD)*100),
-         ymax=100-((MEAN+SD)*100))
-
-viab_para
+```{r, fig.height=8, fig.width=14}
+viab_para%>%
+  #  mutate(dano=as.factor(dano))%>%
+  ggplot(.,aes(x=t-1,y=PROP,group=Dano))+
+  geom_line(aes(color=Dano*100))+
+  geom_pointrange(aes(ymin=ymin, ymax=ymax,color=Dano*100))+
+  #  viridis::scale_color_viridis(option="magma")+
+  scale_color_stepsn(
+    #    colours = c("red", "yellow", "green", "yellow", "red"),
+    # colours = viridis::viridis(n = 7, option = "inferno",direction=-1) ,
+    colours = rev(viridis::viridis(n = 5, option = "magma", direction = -1)))+ 
+  theme_classic(base_size=16)+
+  scale_x_continuous(breaks=seq(0,10,by=1),expand = c(0, 0))+
+  scale_y_continuous(labels = scales::percent_format(scale = 1),
+                     expand = c(0, 0),
+                     breaks=c(0,10,seq(50,200,by=50)))+
+  geom_hline(yintercept=10,color="tomato",linetype="dashed")+
+  labs(color="Impacto/Redução (%)",
+       y="Projeção populacional",
+       x="Anos projetados")+
+  theme(legend.position="right")
 ```
 
 # Glossary
