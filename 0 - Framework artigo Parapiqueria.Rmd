@@ -7,7 +7,7 @@ params:
   update_dat:  !r paste(format(Sys.time(), '%Y-%m-%d (%H:%M:%S)'))
   orig_dat: "05/08/2024"
 output: 
-  html_document: 
+  html_notebook: 
     theme: paper
     code_folding: show
     toc: true
@@ -473,7 +473,7 @@ Non-zero elements in matrix $U$ are $S_{1,1}, S_{2,1}, \tex{end}, S_{2,2}$.
 
 Now, we creates an hypothetical matrix and the non-zero elements
 ```{r, label="creates an hipothetical matrix"}
-AA <- matrix(c(1,1,0,1),ncol=2)
+AA <- matrix(c(1,1,0,0),ncol=2)
 AA
 
 nonzero<-which(AA> 0); nonzero
@@ -508,15 +508,12 @@ C =
 $$
 Informing this to R, we have,
 ```{r}
-C <- rbind(
-  c(-1,  0,  0),  # -a11 ≤ 0
-  c( 0, -1,  0),  # -a21 ≤ 0
-  c( 0,  0, -1),  # -a22 ≤ 0
-  c( 1,  1,  0),  # a11 + a21 ≤ 1
-  c( 0,  0,  1)   # a22 ≤ 1
+C<- rbind(
+  c(-1,  0),  # -a11 ≤ 0
+  c( 0, -1),  # -a21 ≤ 0
+  c( 1,  1)   # a11 + a21 ≤ 1
 )
-
-b <- c(0, 0, 0, 1, 1)
+b <- c(0, 0, 1)
 ```
 
 
