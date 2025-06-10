@@ -119,9 +119,7 @@ Mai24<-read.xlsx("Dados brutos/Dados parapiqueria - Completo - Consolidado 05Aug
 
 ## 2.2. Merge censuses
 
-```{=html eval=FALSE, include=FALSE}
-Quadrants are not relevant for the analyses, so it is removed in the data handling process
-```
+`{=html eval=FALSE, include=FALSE} Quadrants are not relevant for the analyses, so it is removed in the data handling process`
 
 ```{r message=FALSE, warning=FALSE}
 
@@ -301,6 +299,7 @@ all_census_df<-lapply(all_census_ts,cbind,Stages=c("Juveniles","Adults"))%>%
 
 all_census_df
 ```
+
 Describe proportion of individuals in each stage along the year.
 
 ```{r}
@@ -438,87 +437,88 @@ bestS11C<-update(BestModel,~0+t0+(1|period), data=filter(RepIm,Site=="S11C"))
 
 # 4. Inverse model implementation
 
-## 4.1. Accessory function - `WoodPar`
+<!--# FUNCTION WOODPAR REMOVED -->
 
-Automatically detects C, b, and non-zero elements
+## 4.1. Creates an working example[^1]
 
-Function parameters include:
--   `ven` is the target MPM
--   `myC2ven` make matrix $C$
-    -   `myC2ven` must be make in two parts because it is not a simple identity matrix
--   `mynonzero.ven` determines the non-zero elements
--   $b$ elements <!--# Preciso melhorar a explicação -->
+So, let's consider the following MPM:
 
-<!--# BUG: Função ainda em desenvolvimento, parece não funcionar para matrizes 2x2 ainda. Não sei pq isso ocorre! -->
+$$
+A= \begin{bmatrix}
+S_{1,1} & R_{1,2} \\
+S_{2,1} & S_{2,2} \\
+\end{bmatrix}
 
+\\
+
+\text{where,} ~~ A=U+F
+
+\\
+
+U= \begin{bmatrix}
+S_{1,1} & 0 \\
+S_{2,1} & S_{2,2} \\
+\end{bmatrix}
+~~ \text{and} ~~ 
+F= \begin{bmatrix}
+0 & R_{1,2} \\
+0 & 0 \\
+\end{bmatrix}
+
+
+$$
+The respective MPM represents the individuals transition during the period Mar-May, represented by $U$
+
+Non-zero elements in matrix $U$ are $S_{1,1}, S_{2,1}, \tex{end}, S_{2,2}$.
+
+Now, we creates an hypothetical matrix and the non-zero elements
+```{r, label="creates an hipothetical matrix"}
+AA <- matrix(c(1,1,0,1),ncol=2)
+AA
+
+nonzero<-which(AA> 0); nonzero
+
+
+```
+
+To run the `QPmat` function, we need to inform:
+- Demographic restrictions, represented by matrix $C$;
+- Non-zero elements already informed;
+- All vital rates have same weight $b$ element.
+
+Matrix C is described as: 
+
+$$
+C = 
+\left(\begin{array}{ccc}  
+  -1 & 0 & 0  \\          
+  0 & -1 & 0  \\   
+  0 & 0 & -1  \\   
+  1 & 0 & 1  \\   
+  0 & 1 & 0   \\ 
+\end{array}\right)
+~~~~~~~~ \text{representing,} ~~~~~  
+\begin{array}{c}
+  \ S_{1,1} ≤ 0 \\
+  \ S_{2,1} ≤ 0\\
+  \ S_{2,2} ≤ 0 \\
+  \ S_{1,1} + S_{2,1} ≤ 1 \\
+  \ S_{2,2} ≤ 1 \\
+\end{array}
+$$
+Informing this to R, we have,
 ```{r}
-WoodPar<-function(ven){
-  mynonzero.ven<- which(ven> 0)	#Determina quem non-zero elementos da matriz de transição (subdiagonal + classes que reproduzem)
-  myC2ven.part1<-diag(-1,length(mynonzero.ven))
-  myC2ven.part2<-(numeric(dim(ven)[1]))%*%t(numeric(length(mynonzero.ven)))		#MODIFICADO!
-  diag(myC2ven.part2[,-c(seq(from=1,to=ncol(myC2ven.part2),by=1))])<-1			#+RECENTE
-  diag(myC2ven.part2[,-c(seq(from=0,to=(ncol(myC2ven.part2)),by=1))])<-1			#+RECENTE
-  myC2ven.part2<-as.data.frame(myC2ven.part2)
-  venR<-replacing(ven)
-  colnames(myC2ven.part2)<-venR[mynonzero.ven]
-  myC2ven.part2<-replace(myC2ven.part2, which(colnames(myC2ven.part2)=="F"),numeric(dim(myC2ven.part2)[[1]]))
-  myC2ven.part2<-as.matrix(myC2ven.part2)
-  colnames(myC2ven.part2)<-NULL
-  myC2ven<-rbind(myC2ven.part1,myC2ven.part2)
-  myb.ven<- apply(myC2ven, 1, max)
-  out<-list(myC2ven,myb.ven,mynonzero.ven)
-  names(out)<-c("C","b","nonzero")
-  return(out)
-}
+C <- rbind(
+  c(-1,  0,  0),  # -a11 ≤ 0
+  c( 0, -1,  0),  # -a21 ≤ 0
+  c( 0,  0, -1),  # -a22 ≤ 0
+  c( 1,  1,  0),  # a11 + a21 ≤ 1
+  c( 0,  0,  1)   # a22 ≤ 1
+)
+
+b <- c(0, 0, 0, 1, 1)
 ```
 
-## 4.2. Quadratic programming efficiency
-
--   Simulate an hypothetical population to assess model's accuracy
--   **Must run in order to determine C, non-zero elements and b which will be used to estimate survival**
-    -   Hypothetical population was created based on the matrix structure we expect for *Parapiqueria*.
-    -   Matrix is
-        -   2x2
-        -   divided in juveniles and adults
-        -   Does note includes recruitment because it cannot be estimated within year (March-May)
--   Also, contain model validation
-
-```{r include=FALSE, echo=TRUE}
-file.edit("ModelToyv1.R")
-source("ModelToyv1.R")
-```
-
-## 4.3. Survival related demographic parameters estimation
-
-### 4.3.1. Creating the constraint matrix for *Parapiqueria cavalcantei*
-
-```{r}
-newC<-WoodPar(A2)$C          
-#newC<-as.vector(newC)        
-#newC[c(4,9,15)]<-1           
-#newC<-newC%>%matrix(5)
-newC
-```
-
-#### Define non-zero elements
-
-```{r}
-newnonzero<-WoodPar(A2)$nonzero
-newnonzero #Non zero
-```
-
-```{r}
-#b need adjustments
-newb<-WoodPar(A2)$b
-newb[c(1,2,3,4,5)]<-1
-newb
-```
-
-
-QPmat(all_census_ts[[1]]%>%as.matrix(),
-WoodPar(A2)$C,
-WoodPar(A2)$b,
-WoodPar(A2)$nonzero)
 
 # 5. Applying the quadratic programming
 
@@ -527,9 +527,9 @@ mpm_list_bkp<-mpm_list<-NULL
 for(i in 1:length(all_census_ts)){
 mpm_list_bkp[[i]]<-mpm_list[[i]]<-tryCatch(
 		QPmat(all_census_ts[[i]]%>%as.matrix(), 
-			newC,
-			newb,
-			newnonzero),
+			C,
+			b,
+			nonzero),
  error = function(e) { return(NA)})
 }
 
@@ -575,11 +575,59 @@ mpm_list_bkp[names(mpm_list_bkp) %in% names(problems_plots)]
 mpm_list <- mpm_list_bkp[!names(mpm_list)=="Plot_19_2022"]
 ```
 
-# 6. Merging recruitment with survival dependent vital rates
+# 6. Quadratic programming efficiency
+-   Simulate an hypothetical population to assess model's accuracy
+  -   Hypothetical population was created based on the matrix structure we expect for *Parapiqueria*.
+    -   Matrix is
+        -   2x2
+        -   Divided in juveniles and adults
+        -   Does not includes recruitment because it cannot be estimated within year (March-May)
+        -   We assume adults reproduce once and become senescent. So, stage $S_{2,2}$ represents senescent adults and cannot contribute to population growth rate. Two tests with and without the model were performed for efficiency;
+            -   Senescent adults were kept in the matrix, as it helps to estimate demographic parameters, but must be removed during elasticity analyses
 
-## 6.1. Separe MPMs by streams
+```{r include=FALSE, echo=TRUE}
+file.edit("ModelToyv1.R") 
+source("ModelToyv1.R")
+```
 
-Separe plots according to the streams. - Plots 1-10 are placed in the S11C; - Plots 11-20 are placed in the S11B;
+```{r fig.height=5, fig.width=14}
+#the object VRs_dif_df was created in "ModelToyv1.R"
+VRs_dif_df%>%
+  filter(matrix=="A2")%>%
+  ggplot(.,aes(x=census,y=Mean,group=census))+
+  geom_pointrange(aes(ymin=Mean-SD,ymax=Mean+SD,
+                      group=census,color=census,shape=matrix),
+                  position = position_dodge2(width = 0.7))+
+  ylab("Error")+xlab("# censuses")+
+  scale_y_continuous(label=scientific_10)+
+  scale_color_manual(values=c(
+    '#ff6347', '#6e8ab6', '#5b7bb3', '#496daf', '#375fa9', '#2350a4', '#00429d'))+
+  geom_hline(yintercept=0,color="red",linetype=2)+
+  scale_x_discrete(labels=function(l) parse(text=l))+
+  theme_minimal(base_size=24)+
+  facet_wrap(.~stages,scales="free",ncol=3)
+```
+
+
+
+# 7. Producing finam matrix models
+
+## 7.1 Remove senescent individuals for further analyses
+
+```{r}
+
+mpm_list_s22<-mpm_list #Creates a new MPM list including S22
+mpm_list<-Map(function(mat) { mat[2,2] <- 0; mat }, mpm_list) #Remove S22 for further analyses
+
+mpm_list[[1]]
+mpm_list_s22[[1]]
+```
+
+## 7.2. Merging recruitment with survival dependent vital rates
+
+### 7.3. Separe MPMs by streams
+
+Split plots according to the streams. - Plots 1-10 are placed in the S11C; - Plots 11-20 are placed in the S11B;
 
 ```{r}
 mpm_list_S11C<-mpm_list[grep("^Plot_([1-9]|10)_.*$", names(mpm_list))]
@@ -589,9 +637,9 @@ mpm_list_S11B<-mpm_list[grep("^Plot_(1[1-9]|20)_.*$", names(mpm_list))]
 mpm_list_S11C%>%names()
 ```
 
-## 6.2. Build MPM $A$ for each stream
+## 7.2. Build MPM $A$ for each stream
 
-### 6.2.1. Transform Recruitment in matrix $F$
+### 7.2.1. Transform Recruitment in matrix $F$
 
 Each stream has a proper mean $F$ matrix
 
@@ -611,7 +659,7 @@ mean_matF_S11C<-matrix(
 list(mean_matF_S11B, mean_matF_S11C)
 ```
 
-### 6.2.2. Merging components of MPM $A = U + F$
+### 7.2.2. Merging components of MPM $A = U + F$
 
 ```{r}
 mpm_list_recruit_S11C<-Map(`+`, mpm_list_S11C, list(mean_matF_S11C))
@@ -624,7 +672,7 @@ mpm_list_recruit_full<-c(mpm_list_recruit_S11C,mpm_list_recruit_S11B)
 mpm_list_recruit_full[1]
 ```
 
-# 7. Summary results
+# 8. Summary results
 
 An ancillary function to optimise statistical report
 
@@ -660,24 +708,24 @@ mutate(Plot=as.numeric(Plot),
 mutate(Site=ifelse(Plot<11,"S11C","S11B"))
 ```
 
-## 7.1. Overall Vital rates
+## 8.1. Overall Vital rates
 
 ```{r}
 vr.df%>%
-filter(vital_rate!="R")%>%
+filter(vital_rate!=c("R","S4"))%>%
 statrep(., group_vars = c("vital_rate"),value_var = "value")
 ```
 
-## 7.2. Vital rates by plot
+## 8.2. Vital rates by plot
 
 ```{r}
 vr.df%>%
-statrep(., group_vars = c("vital_rate", "Site"),value_var = "value")%>%
-filter(vital_rate!="R")%>%
+filter(vital_rate!=c("R","S4"))%>%
+  statrep(., group_vars = c("vital_rate", "Site"),value_var = "value")%>%
     group_by(Site)%>% group_split()
 ```
 
-### 7.2.1. Checking if there is differences between plots
+### 8.2.1. Checking if there is differences between plots
 
 ```{r}
 vr.df%>%
@@ -846,11 +894,11 @@ LTREyear%>%popbio::var2()
 
 Three steps must be performed first:
 
-1. Define the initial number of individuals based on the mean value of immatures and reproductives
+1.  Define the initial number of individuals based on the mean value of immatures and reproductives
 
 2 Simulate vital rates to include in the model
 
-3. Create a set of matrices with these new estimated variables
+3.  Create a set of matrices with these new estimated variables
 
 ## 9.1. Define the initial number of individuals
 
@@ -1154,8 +1202,8 @@ sim_damage
 
 ```
 
+Perform the simulation
 
- Perform the simulation
 ```{r, include=FALSE, echo=TRUE}
 temp<-NULL
 out<-NULL
@@ -1176,13 +1224,13 @@ for(i in 1:length(sim_damage)){
 }
 ```
 
-
 Calculate the number of simulations crossing the extinction threshold to extimate the persistence probability.
+
 ```{r}
 viab_para<-do.call(rbind,out)%>%
-  mutate(Persist.rate=100-(Extinct.rate*100),
-         ymin=100-((Persist-SD)*100),
-         ymax=100-((Persist+SD)*100))
+  mutate(Persistprop=100-(Extinct.rate*100),
+         ymin=100-((Persistprop-SD)*100),
+         ymax=100-((Persistprop+SD)*100))
   
   viab_para[viab_para>100]<-100
 viab_para[viab_para<0]<-0
@@ -1219,3 +1267,5 @@ viab_para%>%
 C
 
 :   C: is a matrix somehow
+
+[^1]: This working example helps to visualise how vital rates are organized in the matrix.
