@@ -494,9 +494,9 @@ source("ModelToyv1.R")
 
 ```{r}
 newC<-WoodPar(A2)$C          
-newC<-as.vector(newC)        
-newC[c(4,9,15)]<-1           
-newC<-newC%>%matrix(5)
+#newC<-as.vector(newC)        
+#newC[c(4,9,15)]<-1           
+#newC<-newC%>%matrix(5)
 newC
 ```
 
@@ -513,6 +513,12 @@ newb<-WoodPar(A2)$b
 newb[c(1,2,3,4,5)]<-1
 newb
 ```
+
+
+QPmat(all_census_ts[[1]]%>%as.matrix(),
+WoodPar(A2)$C,
+WoodPar(A2)$b,
+WoodPar(A2)$nonzero)
 
 # 5. Applying the quadratic programming
 

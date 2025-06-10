@@ -10,10 +10,11 @@
 ## Recruitment		# f2= No reproduction between months of the same season
 #--------------------------------------------------------------------------------
 
-vr <- list(seed_surv=0.1 , s0=0.3,s1=0.7, s2=0.3,f2=0)
+vr <- list(seed_surv=0.1 , s0=0.3,s1=0.7, s2=0,f2=0)
 pre <- expression(matrix2(c(
 s0,  f2*seed_surv,
 s1, s2  ),   stages[-1] ))
+
 
 stages<-c("seed","Juvenile","Adult")
 
@@ -70,13 +71,19 @@ limite<-parametros(A2,tol=2)
 
 serie.ven[,limite]
 
+serie.ven[,c(2:9)]
+
+QPmat(serie.ven[,c(1:3)], WoodPar(A2)$C,WoodPar(A2)$b,WoodPar(A2)$nonzero)
+
 MPMs<-NULL
+
+
 for(i in min(Intervalos):max(Intervalos)){
   MPMs[[i]] <- list() 
 	for(j in 1:(limite-max(Intervalos))){
 		MPMs[[i]][[j]]<-QPmat(serie.ven[,c(j:(j+i))], WoodPar(A2)$C,WoodPar(A2)$b,WoodPar(A2)$nonzero)
 	print(paste(i,j))
-		}
+	}
 print(serie.ven[,c(j:(j+i))])
 	}
 
