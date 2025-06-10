@@ -218,23 +218,6 @@ VRs_dif_df<-rbind(
 VRs_dif_df
 
 
-VRs_dif_df%>%
-  filter(matrix=="A2")%>%
-  ggplot(.,aes(x=census,y=Mean,group=census))+
-  geom_pointrange(aes(ymin=Mean-SD,ymax=Mean+SD,
-                      group=census,color=census,shape=matrix),
-                  position = position_dodge2(width = 0.7))+
-  ylab("Error")+xlab("# censuses")+
-  scale_y_continuous(label=scientific_10)+
-  scale_color_manual(values=c(
-    '#ff6347', '#6e8ab6', '#5b7bb3', '#496daf', '#375fa9', '#2350a4', '#00429d'))+
-  geom_hline(yintercept=0,color="red",linetype=2)+
-  scale_x_discrete(labels=function(l) parse(text=l))+
-  theme_minimal(base_size=16)+
-  facet_wrap(.~stages,scales="free",ncol=3)
-
-
-
 # Including matrix A3 for comparison
 VRs_dif_df%>%
   #filter(matrix=="A3")%>%
