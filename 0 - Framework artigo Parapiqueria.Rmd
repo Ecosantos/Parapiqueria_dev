@@ -113,18 +113,15 @@ Mai24<-read.xlsx("Dados brutos/Dados parapiqueria - Completo - Consolidado 05Aug
     Censuses are performed every March, April and May and need to merged to produce a timeserie.
 
     -   Two datasets were produced
-
-    ```         
-    -   A timeserie (Mar-May) to run QPmat
-
-    -   A maximum number of individuals each year to estimate recruitment
-
-        -   Censuses from different years must be paired
-    ```
+        -   A timeserie (Mar-May) to run QPmat
+        -   A maximum number of individuals each year to estimate recruitment
+            -   Censuses from different years must be paired
 
 ## 2.2. Merge censuses
 
-> Quadrants are not necessary for the analyses
+```{=html eval=FALSE, include=FALSE}
+Quadrants are not relevant for the analyses, so it is removed in the data handling process
+```
 
 ```{r message=FALSE, warning=FALSE}
 
@@ -191,25 +188,25 @@ Census_all_max  #View
 
 ```{r message=FALSE, warning=FALSE}
 Timelags_base<-Census_all_max %>%
-  mutate(year = as.numeric(year)) %>%
-  group_by(Plot) %>%
-  arrange(year, stage) %>%
+  mutate(year = as.numeric(year)) %>%        # make sure year is a numeric column
+  group_by(Plot) %>%                         
+  arrange(year, stage) %>%    # It is important to get all arranged as lead is dependent of the dataset order!                
   mutate(VAR = paste0(stage, ">", 
                       lead(stage, order_by = interaction(year,stage)))) %>%
-# Armazena o ano inicial e o ano seguinte para o cálculo do intervalo de tempo
+# Store initial and next year to calculate recruitment
   mutate(t0y = year,
-         t1y = lead(year, order_by = VAR))%>%   #lead acessa o próximo valor, logo o ano t+1 já que os valores estão em ordem
+         t1y = lead(year, order_by = VAR))%>%   #lead function gets the next value, so, t+1 as they are sorted
   mutate(t0 = value, 
          t1 = lead(value, order_by = VAR)) %>% 
-  # Filtra apenas os casos onde o ano seguinte (t1y) é maior que o ano inicial (t0y),
-  filter(t1y>t0y)%>%	#It only returns with timelag. Change interaction to return same year variables
+  # filters only years were t+1 (t1y) is older than initial year t (t0y),
+  filter(t1y>t0y)%>%	#If this order is not what you want, change interaction to return same year variables
   arrange(Plot,VAR)
 
 #### Max Rep in t0 vs. MaxTot in t1
 #Pairing Maximum reprodutctive to Max Total
 
 RepTot<-left_join(
-  filter(Timelags_base,stage=="MaxRep")%>%select(Site:Plot,t0y,t0),
+  filter(Timelags_base,stage=="MaxRep")%>%select(Site:Plot,t0y,t0),  #Filter reproductive from t and total recruited individuals from t+1 (next line)
   filter(Timelags_base,stage=="MaxTot")%>%select(Site:Plot,t1y,t1))%>%
   mutate(VAR="MaxRep>MaxTot")%>%
   select(VAR,Site:t0y,t1y,t0,t1)%>%	#Reorder columns
@@ -298,10 +295,29 @@ all_census_ts[1]
 
 
 # Show censuses
-lapply(all_census_ts,cbind,Stages=c("Juveniles","Adults"))%>%
+all_census_df<-lapply(all_census_ts,cbind,Stages=c("Juveniles","Adults"))%>%
     Map(cbind, Plot_year = names(.),.)%>%do.call(rbind,.)%>%
     setNames(c("Plot_year","Mar", "Apr", "May","Stage"))%>%relocate(Stage, .before = "Mar")
 
+all_census_df
+```
+Describe proportion of individuals in each stage along the year.
+
+```{r}
+all_census_df %>%
+  pivot_longer(cols = c(Mar, Apr, May), names_to = "Month", values_to = "Count") %>%
+  group_by(Plot_year, Month) %>%
+  filter(sum(Count) > 0) %>%  # Remove plots where adults and juveniles are 0 (Plot_15_2024)
+  mutate(Proportion = Count / sum(Count)) %>%
+  ungroup() %>%
+  group_by(Month, Stage) %>%
+  summarise(
+    MeanProportion = mean(Proportion),
+    SDProportion = sd(Proportion),
+    .groups = "drop"
+  ) %>%
+  mutate(across(where(is.numeric), round, 3)) %>%#Note that SDProportion looks similar, but if 6 decimals are considered we spot differences! 
+mutate(Month = factor(Month, levels = c("Mar", "Apr", "May")))%>%arrange(Month)
 ```
 
 # 3. Recruitment analyses
@@ -324,7 +340,7 @@ Assessing if the maximum number of immature individuals in $t_1$ can be predicte
 
 Negative binomial has the best fit
 
-```{html eval=FALSE, include=FALSE}
+```{html,label="how choose best glm model", eval=FALSE, include=FALSE, code_folding="hide"}
 <!--
 ###  Poisson model worst performed and several warning message
 pois_RepIm<-glmmTMB::glmmTMB(t1~0+t0*Site+(1|period), 
@@ -364,32 +380,12 @@ BestModel%>%parameters::parameters(.,exponentiate =F)
 
 Check differences between streams
 
-```{html eval=FALSE, include=FALSE, code_folding="hide"}
-<!-- TO THINK ABOUT! 
-QUAL O MELHOR MODELO PARA ESTIMAR SE HÁ OU NÃO DIFERENÇA NO RECRUTAMENTO DE PARAPIQUERIA?
-
-BestModel Força o intercepto em zero porém com isso o modelo para de comparar diferenças entre sítios. 
-
-# Modelo
-glmmTMB::glmmTMB(t1~t0+Site+(1|period),       # Veja que o intercepto foi incluido (removi "0 + " da equação)
-                  family=nbinom2(link = "log"),data=RepIm)%>%summary()
-
-# RESULTADO
-             Estimate Std. Error z value Pr(>|z|)    
-(Intercept)  3.939961   0.273631  14.399   <2e-16 ***
-t0           0.007173   0.003201   2.241   0.0251 *  
-SiteS11B    -0.575314   0.229811  -2.503   0.0123 *         
-# Esse resultado indica claramente que há diferenças entre os riachos!
-
--->
-```
-
 ```{r}
 car::Anova(BestModel)
 ```
 
-```{html eval=FALSE, include=FALSE, code_folding="hide"}
-<!-- IMPORTANTE!
+```{html, label="Including or not intercept in the model", eval=FALSE, include=FALSE, code_folding="hide"}
+#  IMPORTANTE!
 Uma coisa que me gerou muita insegurança no passado e ainda é uma questão pra mim é se eu deveria ou não incluir o intercepto nesses modelos. 
 
 Uma análise mais atenciosa no entanto revela que essa não deveria ser uma questão. 
@@ -424,7 +420,6 @@ O modelo apesar de parecer apresentar resultados diferentes não o faz. Pq se di
 
 SiteS11B-SiteS11C =  3.364650 - 3.939963 = -0.575314
 
--->
 ```
 
 ```{r eval=FALSE, include=FALSE}
@@ -448,18 +443,13 @@ bestS11C<-update(BestModel,~0+t0+(1|period), data=filter(RepIm,Site=="S11C"))
 Automatically detects C, b, and non-zero elements
 
 Function parameters include:
+-   `ven` is the target MPM
+-   `myC2ven` make matrix $C$
+    -   `myC2ven` must be make in two parts because it is not a simple identity matrix
+-   `mynonzero.ven` determines the non-zero elements
+-   $b$ elements <!--# Preciso melhorar a explicação -->
 
--   ven is the target MPM
-
--   myC2ven make matrix $C$
-
-    -   myC2ven must be make in two parts because it is not a simple identity matrix
-
--   mynonzero.ven determines the non-zero elements
-
--   $b$ elements <!--# Preciso melhorar a explicação-->
-
-    <!--# BUG: Função ainda em desenvolvimento, parece não funcionar para matrizes 2x2 ainda. Não sei pq isso ocorre! -->
+<!--# BUG: Função ainda em desenvolvimento, parece não funcionar para matrizes 2x2 ainda. Não sei pq isso ocorre! -->
 
 ```{r}
 WoodPar<-function(ven){
@@ -490,7 +480,7 @@ WoodPar<-function(ven){
     -   Matrix is
         -   2x2
         -   divided in juveniles and adults
-        -   Does note includes recruitment because it cannot be estimated within year (March-May) <!--# Isso é bem importante pq é aqui que está o segredo do nosso modelo -->
+        -   Does note includes recruitment because it cannot be estimated within year (March-May)
 -   Also, contain model validation
 
 ```{r include=FALSE, echo=TRUE}
@@ -588,6 +578,9 @@ Separe plots according to the streams. - Plots 1-10 are placed in the S11C; - Pl
 ```{r}
 mpm_list_S11C<-mpm_list[grep("^Plot_([1-9]|10)_.*$", names(mpm_list))]
 mpm_list_S11B<-mpm_list[grep("^Plot_(1[1-9]|20)_.*$", names(mpm_list))]
+
+#Check
+mpm_list_S11C%>%names()
 ```
 
 ## 6.2. Build MPM $A$ for each stream
@@ -847,11 +840,11 @@ LTREyear%>%popbio::var2()
 
 Three steps must be performed first:
 
-1\. Define the initial number of individuals based on the mean value of immatures and reproductives
+1. Define the initial number of individuals based on the mean value of immatures and reproductives
 
 2 Simulate vital rates to include in the model
 
-3\. Create a set of matrices with these new estimated variables
+3. Create a set of matrices with these new estimated variables
 
 ## 9.1. Define the initial number of individuals
 
@@ -1007,7 +1000,7 @@ hist(unlist(lapply(mpm_list_recruit_S11C, lambda)),
 
 ```
 
-## 9.4. Extinction growth rate 
+## 9.4. Extinction growth rate
 
 ```{r}
 resultado<-stoch.quasi.ext(StochA, 
@@ -1017,7 +1010,7 @@ resultado<-stoch.quasi.ext(StochA,
               tmax = 10, nreps=100)
 matplot(resultado, xlab="Years", ylab="Cumulative extinction risk (%)", 
         type='l', lty=1, col="grey20", las=1,
-        main="Extinction risk \n (cross extinction threshold of 10% initial population")
+        main="Extinction risk \n (Proportion of simulations crossing extinction threshold of 10% initial population")
 
 ```
 
@@ -1140,14 +1133,14 @@ Myviab_func<-function (matrices, n0, Nx, tmax = 50, maxruns = 10, nreps = 5000,
         }
       }
     }
-    prob.ext <- cumsum(prob.ext/nreps)
+    prob.ext <- cumsum(prob.ext/nreps) #Extinctions by number of replications
     ext[, h] <- prob.ext
   }
   ext
 }
 ```
 
--   Define de impacts. a sequence of impact from 0% to 5% reduction in vital rates
+-   Define de impacts. a sequence of impact from 0% to 50% reduction in vital rates
 
 ```{r}
 sim_damage<-seq(0,0.5,by=0.05)
@@ -1155,10 +1148,47 @@ sim_damage
 
 ```
 
+
+ Perform the simulation
+```{r, include=FALSE, echo=TRUE}
+temp<-NULL
+out<-NULL
+
+tmax=11   #Years simulated (from t0 to t10)
+for(i in 1:length(sim_damage)){
+  temp<-Myviab_func(StochA, 
+                    n0 = Mean_indiv$Median[1:2], 
+                    Nx=Mean_indiv[3,3]/10,        #Mean_indiv[3,3]/10 representa 10% dos indivíduos médios
+                    maxruns=10,                   # Número de réplicas em cada simulação?
+                    tmax = tmax, nreps=1000,
+                    damage=sim_damage[i])
+  out[[i]]<-data.frame(Extinct.rate=apply(temp,1,mean),
+                       SD=apply(temp,1,sd),
+                       Dano=sim_damage[i],
+                       t=seq(1,tmax,by=1))
+  print(paste0("Simulating damage at ",sim_damage[i]*100,"%" ))
+}
+```
+
+
+Calculate the number of simulations crossing the extinction threshold to extimate the persistence probability.
+```{r}
+viab_para<-do.call(rbind,out)%>%
+  mutate(Persist.rate=100-(Extinct.rate*100),
+         ymin=100-((Persist-SD)*100),
+         ymax=100-((Persist+SD)*100))
+  
+  viab_para[viab_para>100]<-100
+viab_para[viab_para<0]<-0
+
+
+viab_para%>%filter(t==10)
+```
+
 ```{r, fig.height=8, fig.width=14}
 viab_para%>%
   #  mutate(dano=as.factor(dano))%>%
-  ggplot(.,aes(x=t-1,y=PROP,group=Dano))+
+  ggplot(.,aes(x=t-1,y=Persistprop,group=Dano))+
   geom_line(aes(color=Dano*100))+
   geom_pointrange(aes(ymin=ymin, ymax=ymax,color=Dano*100))+
   #  viridis::scale_color_viridis(option="magma")+
@@ -1166,7 +1196,7 @@ viab_para%>%
     #    colours = c("red", "yellow", "green", "yellow", "red"),
     # colours = viridis::viridis(n = 7, option = "inferno",direction=-1) ,
     colours = rev(viridis::viridis(n = 5, option = "magma", direction = -1)))+ 
-  theme_classic(base_size=16)+
+  theme_classic(base_size=24)+
   scale_x_continuous(breaks=seq(0,10,by=1),expand = c(0, 0))+
   scale_y_continuous(labels = scales::percent_format(scale = 1),
                      expand = c(0, 0),
