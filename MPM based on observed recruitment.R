@@ -11,7 +11,6 @@ RepTot2 <- RepTot %>%
   mutate(id = paste0("Plot_", Plot, "_", year)) %>%
   mutate(U = map(id, ~ mpm_list[[.x]] %||% NA))
 
-
 RepTot2
 
 
@@ -50,11 +49,19 @@ length(F_list_aligned)
 
 A_list <-Map(`+`, U_list_aligned, F_list_aligned)
 
+A_list
+
+
+RepTot2%>%
+  mutate(Recruit=t1/t0)%>%
+  select(Recruit,id)%>%view()
+
+
 lapply(A_list,lambda)
 lapply(A_list,lambda)%>%unlist%>%mean()
 lapply(A_list,lambda)%>%unlist%>%sd()
 
-
+A_list 
 names(F_list$F_matrix)
 F_list
 RepTot2 <- RepTot %>%

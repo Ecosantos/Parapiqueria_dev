@@ -202,8 +202,8 @@ Census_all_max<-rbind(
 #Remove censuses in plot 8 and 9 because it was not correctly sampled
 Census_all_max<-Census_all_max %>% filter(!((Plot %in% c(8,9)) & year == 2025)) 
 
-#Remove census in plot 15 in 2025 as it was extincted a year before
-#Census_all #View
+#Remove census in plot 15 in 2025 as it was extinct a year before
+Census_all_max<-Census_all_max %>% filter(!((Plot == 15) & year == 2025)) 
 
 #Census_all_max  #View
 ```
@@ -257,7 +257,7 @@ RepTot
 
 ## 2025
 Census2025_ts<-census2025%>%arrange(Site,Plot,Month)%>%
-    filter(!(Plot %in% c(8,9)))%>% #Remove censuses from plot 8 and 9
+    filter(!(Plot %in% c(8,9,15)))%>% #Remove censuses from plot 8, 9 and 15
 select(Plot,Month,Imaturos,Reprodutivos)%>%
 pivot_longer(c(Imaturos,Reprodutivos),names_to="Stage",values_to="Indv")%>%
 pivot_wider(names_from=Month,values_from="Indv")%>%
@@ -470,7 +470,7 @@ U_list_bkp[[i]]<-U_list[[i]]<-tryCatch(
 
 names(U_list)<-names(U_list_bkp)<-names(all_census_ts)
 
-U_list[1]
+U_list[50]
 ```
 
 ## 5.1. Remove plots where vital rates could not be estimated
@@ -560,7 +560,7 @@ F_list <- Recruit_asmx %>%
   { set_names(.$F_matrix, .$id) }
 
 
-F_list [[1]]
+F_list[[1]]
 ```
 
 
@@ -588,17 +588,24 @@ mpm_list <-Map(`+`, U_list_aligned, F_list_aligned)
 ```
 
 
+
+
 ### 7.3. Separe MPMs by streams
 
-Split plots according to the streams. - Plots 1-10 are placed in the S11C; - Plots 11-20 are placed in the S11B;
+Split plots according to the streams. 
+
+- Plots 1-10 are placed in the S11C; 
+
+- Plots 11-20 are placed in the S11B;
+
 
 ```{r}
 mpm_list_S11C<-mpm_list[grep("^Plot_([1-9]|10)_.*$", names(mpm_list))]
 mpm_list_S11B<-mpm_list[grep("^Plot_(1[1-9]|20)_.*$", names(mpm_list))]
 
-#Check
-mpm_list_S11C%>%names()
 ```
+
+
 
 # 8. Summary results
 
@@ -734,49 +741,43 @@ vr.df%>%
 ```
 
 ```{r}
-lambsSite<-rbind(
-do.call(rbind,lapply(mpm_list_S11C,lambda))%>%
-	data.frame(Site="S11C")%>%
-			rownames_to_column(var = "VAR"),
-do.call(rbind,lapply(mpm_list_S11B,lambda))%>%
-	data.frame(Site="S11B",mod="model")%>%
-			rownames_to_column(var = "VAR"))
+lamb_df<-lapply(mpm_list,lambda)%>%
+  unlist()%>%data.frame(Lambda=.)%>%
+  rownames_to_column(., var = "plot_year")%>%as_tibble()%>%
+  separate("plot_year",sep="_",into = c("x", "Plot", "Year"))%>%
+  select(-x)%>%
+  mutate(Site=ifelse(Plot<11,"S11C","S11B"))
+
+mean(lamb_df$Lambda)
+sd(lamb_df$Lambda)
+range(lamb_df$Lambda)
 
 #TESTING DIFFERENCES
-t.test(lambsSite$.~lambsSite$Site)
+t.test(Lambda~Site,data=lamb_df)
+
+
+lamb_df%>%statrep(., group_vars = c("Site","Year"),value_var = "Lambda")
+
 
 ```
 
-```{r}
-lambsSite_df<-lambsSite%>%rename(., Lambda=.)%>%
-as_tibble()%>%
-separate(VAR,sep="_",into = c("x", "Plot", "year"))%>%
-select(-x)%>%
-mutate(Plot=as.numeric(Plot),
-	 year=year)%>%
-mutate(Site=ifelse(Plot<11,"S11C","S11B"))%>%
-statrep(., group_vars = c("Site", "year"),value_var = "Lambda")
+```{r,fig.height=5, fig.width=8}
+lamb_df%>%
+  statrep(., group_vars = c("Site","Year"),value_var = "Lambda")%>%
+  #  mutate(VAR="PopGrowthRate")%>%
+  ggplot(.,aes(y=Mean,x=Year,group=Site))+
+  geom_hline(yintercept=1,col="red", linetype="longdash")+
+  geom_pointrange(aes(ymin=Mean-SE,ymax=Mean+SE,color=Site,shape=Year),alpha=0.8,
+                  position = position_dodge2(width = 0.7))+
+  #  geom_line(aes(color = Site, group = Site), 
+  #            position = position_dodge2(width = 0.7))+
+  scale_x_discrete(labels=function(l) parse(text=l))+
+  scale_color_manual(values=c("#ff9211","#6e86e7"))+
+  theme_bw(base_size=16)+
+  theme(legend.position="right")+
+#  facet_grid(.~VAR)+
+  xlab("Population growth rate")+ylab("Years")
 
-lambsSite_df
-```
-
-```{r include=FALSE}
-lambsPlot<-lambsSite_df%>%
-mutate(VAR="PopGrowthRate")%>%
-ggplot(.,aes(y=Mean,x=VAR,group=year))+
-geom_hline(yintercept=1,col="red", linetype="longdash")+
-geom_pointrange(aes(ymin=Mean-SE,ymax=Mean+SE,color=Site,shape=year),alpha=0.8,
-	position = position_dodge2(width = 0.7))+
-#  geom_line(aes(color = Site, group = Site), 
-#            position = position_dodge2(width = 0.7))+
-scale_x_discrete(labels=function(l) parse(text=l))+
-scale_color_manual(values=c("#ff9211","#6e86e7"))+
-theme_bw(base_size=16)+
-theme(legend.position="bottom")+
-facet_grid(.~VAR)+
-xlab(NULL)+ylab(NULL)
-
-lambsPlot
 ```
 
 # 8. Applying demographic tools: elasticity and LTRE
@@ -785,20 +786,20 @@ lambsPlot
 
 ```{r, result="asis"}
 
-# Mean elasticity for Parapiqueria
-elasticity(mean(c(mpm_list_recruit_S11C,mpm_list_recruit_S11B)))
+#Elasticities 
+elasticity(mean(mpm_list))
 
 # Elasticities in Site S11B
-elasticity(mean(mpm_list_recruit_S11B))
+elasticity(mean(mpm_list_S11B))
 
 # Elasticities in Site S11C
-elasticity(mean(mpm_list_recruit_S11C))
+elasticity(mean(mpm_list_S11C))
 ```
 
 ## 8.2. Life Table Response Experiment (LTRE)
 
 ```{r}
-LTRE(mean(mpm_list_recruit_S11B), mean(mpm_list_recruit_S11C))
+LTRE(mean(mpm_list_S11B), mean(mpm_list_S11C))
 ```
 
 ## 8.2. Life table response by year
@@ -808,23 +809,18 @@ LTRE(mean(mpm_list_recruit_S11B), mean(mpm_list_recruit_S11C))
 LTREyear<-list(
   #2022
 LTRE(
-mean(mpm_list_recruit_S11B[grep("2022$", names(mpm_list_recruit_S11B), value = TRUE)]),
-mean(mpm_list_recruit_S11C[grep("2022$", names(mpm_list_recruit_S11C), value = TRUE)])),
+mean(mpm_list_S11B[grep("2022$", names(mpm_list_S11B), value = TRUE)]),
+mean(mpm_list_S11C[grep("2022$", names(mpm_list_S11C), value = TRUE)])),
 
 #2023
 LTRE(
-mean(mpm_list_recruit_S11B[grep("2023$", names(mpm_list_recruit_S11B), value = TRUE)]),
-mean(mpm_list_recruit_S11C[grep("2023$", names(mpm_list_recruit_S11C), value = TRUE)])),
+mean(mpm_list_S11B[grep("2023$", names(mpm_list_S11B), value = TRUE)]),
+mean(mpm_list_S11C[grep("2023$", names(mpm_list_S11C), value = TRUE)])),
 
 #2024
 LTRE(
-mean(mpm_list_recruit_S11B[grep("2024$", names(mpm_list_recruit_S11B), value = TRUE)]),
-mean(mpm_list_recruit_S11C[grep("2024$", names(mpm_list_recruit_S11C), value = TRUE)])),
-
-#2025
-LTRE(
-mean(mpm_list_recruit_S11B[grep("2025$", names(mpm_list_recruit_S11B), value = TRUE)]),
-mean(mpm_list_recruit_S11C[grep("2025$", names(mpm_list_recruit_S11C), value = TRUE)]))
+mean(mpm_list_S11B[grep("2024$", names(mpm_list_S11B), value = TRUE)]),
+mean(mpm_list_S11C[grep("2024$", names(mpm_list_S11C), value = TRUE)]))
 )
 
 #Mean
@@ -833,122 +829,6 @@ LTREyear%>%mean()
 #Variance
 LTREyear%>%popbio::var2()
 
-```
-
-## 
-
-# 3. Recruitment analyses
-
-## 3.1. Packages
-
-```{r message=FALSE, warning=FALSE} library(lme4) library(DHARMa) library(performance) library(glmmTMB) library(MuMIn)  options(na.action=na.fail) #Necessary for correct use of MuMIn}
-```
-
-## 3.2. Estimating recruitment based on the maximum reproductive individuals
-
-Assessing if the maximum number of total individuals in $t_1$ can be predicted by the maximum number of of reproductive in the year before $t_0$ <!--# Previous analyses comparing if the model better predicts total individuals or number of immature. Total immature has a slightly better AIC than total individuals but its rationale is not straightforward. Moreover, simulation show lower lambdas which is unlikely-->
-
-Negative binomial has the best fit
-
-```{html,label="how choose best glm model", eval=FALSE, include=FALSE, code_folding="hide"}
-<!--
-###  Poisson model worst performed and several warning message
-pois_RepIm<-glmmTMB::glmmTMB(t1~0+t0*Site+(1|period), 
-      family=poisson(link = "log"),data=RepIm)
-
-dredge(pois_RepIm)
-
-# RESULT
-  dsp((Int)) cnd(Sit)  cnd(t0) cnd(Sit:t0) df   logLik   AICc  delta weight
-4          +        + 0.005436              4 -642.156 1293.5   0.00  0.663
-8          +        + 0.004913           +  5 -641.522 1294.8   1.35  0.337
-2          +        +                       3 -714.134 1434.9 141.48  0.000
-3          +          0.004766              2 -750.634 1505.6 212.14  0.000
--->
-```
-
-<!-- # Site is no longer included in the best model for reproduction but it is still significantly differently
-
-# NEED TO UPDATE IN THE CODE BELOW
--->
-
-```{r message=FALSE, warning=FALSE, cache=TRUE}
-nb_RepTot<-glmmTMB::glmmTMB(t1~0+t0*Site+(1|period),
-                           family=nbinom2(link = "log"),data=RepTot)
-
-
-nb_RepTot_ls<-dredge(nb_RepTot)%>%get.models(subset=NA)
-
-nb_RepTot_df<-data.frame(
-  formula=format(cbind(lapply(nb_RepTot_ls,formula))),
-  Var="Rep>Tot",Dist="Neg.Bin",
-  AICcmodavg::aictab(nb_RepTot_ls))
-
-nb_RepTot_df
-```
-
-```{r message=FALSE, warning=FALSE}
-# Best model is t1~0+t0+Site+(1|census) Negative binomial
-BestModel<-update(nb_RepTot,t1~0+t0+Site+(1|period))
-BestModel%>%parameters::parameters(.,exponentiate =F)
-```
-
-Check differences between streams
-
-```{r}
-car::Anova(BestModel)
-```
-
-```{html, label="Including or not intercept in the model", eval=FALSE, include=FALSE, code_folding="hide"}
-#  IMPORTANTE!
-Uma coisa que me gerou muita insegurança no passado e ainda é uma questão pra mim é se eu deveria ou não incluir o intercepto nesses modelos. 
-
-Uma análise mais atenciosa no entanto revela que essa não deveria ser uma questão. 
-# 
-O modelo por exemplo
-bestS11B(t1 ~ 0 + t0 + (1|period)) remove o intercepto e estima o efeito de beta t0 em 0.009382 
-Já com a remoção do intercepto o valor passa a ser 0.009047. 
-
-Quando convertido para o exponencial (para voltar a únidade de medida de individuos) temos então 1.009426 e 1.009088 respectivamente. Uma diferença de 0.000338, que PROVAVELMENTE é irrelevante para o modelo.
-
-
-De forma similar temos 
-
-
-beta t0 = 0.007173 em BestModel (modelo global que compara entre sítios e remove o intercepto)
-e  temos exatamente o mesmo valor (beta t0 =  0.007173) para o modelo incluindo o intercepto!
-
-Eles são o mesmo? Sim porém ao incluir o intercept somos também capazes de ter uma estimativa direta da diferença entre os modelos
-             Estimate Std. Error z value Pr(>|z|)    
-(Intercept)  3.939961   0.273631  14.399   <2e-16 ***
-t0           0.007173   0.003201   2.241   0.0251 *  
-SiteS11B    -0.575314   0.229811  -2.503   0.0123 *       # Fica claro que os recrutamentos são diferentes!!!
-
-enquanto que ao remover o intercepto temos 
-Conditional model:
-         Estimate Std. Error z value Pr(>|z|)    
-t0       0.007173   0.003201   2.241   0.0251 *  
-SiteS11C 3.939963   0.273631  14.399   <2e-16 ***
-SiteS11B 3.364650   0.297025  11.328   <2e-16 ***
-
-O modelo apesar de parecer apresentar resultados diferentes não o faz. Pq se diminuiirmos beta SiteS11C e beta SiteS11B temos exatamente a diferença de Beta siteS11B calculada quando temos o intercepto
-
-SiteS11B-SiteS11C =  3.364650 - 3.939963 = -0.575314
-
-```
-
-```{r eval=FALSE, include=FALSE}
-
-ggeffects::predict_response(
-  BestModel,terms=c("t0[0:208]", #[0,208] represent the minimum and maximum individuals record in plot per month and pear stage(?)
-          "Site","period"))%>%plot()
-
-```
-
-```{r}
-# Apply the same structure of the best model but for each stream
-bestS11B<-update(BestModel,~0+t0+(1|period), data=filter(RepIm,Site=="S11B"))
-bestS11C<-update(BestModel,~0+t0+(1|period), data=filter(RepIm,Site=="S11C"))
 ```
 
 # 9. Extinction risk
@@ -976,166 +856,37 @@ Mean_indiv<-Census_all_max%>%
 Mean_indiv
 ```
 
-## 9.2. Simulate the vital rates
-
--   Simulate binomial distribution values from recruitment based on the best model
-
--   Simulate Survival, growth and stasis based on a beta distribution using beta function in `popbio` package
-
-```{r}
-BestModel_coef<-(BestModel%>%summary%>%coef)$cond%>%exp()
-
-
-#BestModel_coef[1,1]  # Check best model coeficients
-#BestModel_coef[1,2]
-
-# Simulating recruitment
-rec_sim<-
-  0.1+    #A small factor has been added to make sure individuals will not recruit zero indivíduals
-  rnbinom(1000, 
-          mu =   BestModel_coef[1,1],
-          size = sigma(BestModel) #Desviation in the model
-  )
-
-
-# Simulating U matrices values
-mean_vrs_period<-mean(mpm_list)
-var_vrs_period<-var2(mpm_list)
-
-s1_sim<-replicate(1000,betaval(mean_vrs_period[1],var_vrs_period[1]))
-s2_sim<-replicate(1000,betaval(mean_vrs_period[2],var_vrs_period[2]))
-s3_sim<-replicate(1000,betaval(mean_vrs_period[4],var_vrs_period[4]))
-```
-
-### 9.2.1. Visual validation of simulated parameters
-
-```{r, result="hold"}
-par(mfrow=c(2,2))
-  s1_sim%>%hist(main="stasis")
-  abline(v=mean_vrs_period[1],col="red")
-  
-  s2_sim%>%hist(main="growth")
-  abline(v=mean_vrs_period[2],col="red")
-  
-  s3_sim%>%hist(main="survival")
-  abline(v=mean_vrs_period[2],col="red")
-  
-  hist(rec_sim,breaks=30,main="Recrutamento",freq=F)  #Simulated recruitment
-  (RepIm$t1/RepIm$t0)%>%hist(breaks=30,freq=F,add=T,col=alpha("orange",0.6))  #Observed recruitment
-  abline(v=exp(parameters::parameters(BestModel)[1,2]),col="red") #Esimated recruitment
-
-```
-
-## 9.3. Produce simulated MPMs
-
--   Based on the simulated vital rates produced, we can now produce the simulated MPMs.
-
-Define de stages and the MPM format
-
-```{r}
-
-stages<-c("seed","Juvenile","Adult")
-
-lifecycle_para <- expression(matrix2(c(
-  s1,  recruit,
-  s2, s3  ),   stages[-1] ))
-
-vrstoch<-function(){
-  vr <- list( s1=sample(s1_sim)[1],
-              s2=sample(s2_sim)[1],
-              s3=sample(s3_sim)[1],
-              recruit=sample(rec_sim)[1])
-  return(vr)
-}
-
-#Check if MPM is being built
-
-eval(lifecycle_para, vrstoch())
-
-```
-
-### 9.3.1 Simulate several MPMs
-
-```{r}
-#Create the matrices
-StochA_sim<-replicate(10000,(eval(lifecycle_para, vrstoch())))
-
-StochA <- lapply(seq(dim(StochA_sim)[3]), function(i) StochA_sim[,,i])
-
-StochA[[1]]
-
-```
-
-```{r}
-data.frame(
-  rbind(
-    c(
-    lapply(StochA,lambda)%>%unlist%>%mean,
-    lapply(mpm_list,lambda)%>%unlist%>%mean),
-    c(
-    lapply(StochA,lambda)%>%unlist%>%sd,
-    lapply(mpm_list,lambda)%>%unlist%>%sd)
-    ),
-  row.names=c("Mean_lambda","sd_lambda"))%>%
-  setNames(c("Simulated","Observed"))
-```
-
-```{r}
-rbind(
-lapply(StochA,lambda)%>%unlist%>%range,
-lapply(mpm_list,lambda)%>%unlist%>%range)
-```
-
-### 9.3.2. Check values
-
-Check lambda
-
-```{r, code_folding="hide", result="hold"}
-par(mfrow=c(2,2))
-
-# Simulated data
-hist(unlist(lapply(StochA, lambda)),
-     freq = FALSE,ylim=c(0,3),
-     breaks=c(0, 0.33, 0.70, 1.00, 1.31, 1.66, 2.00, 2.31, 2.65, 3.2),
-     main="Simulated data", xlab="Population growth rate (lambda)")
-
-#S11B
-hist(unlist(lapply(mpm_list_recruit_S11B, lambda)),
-     freq = FALSE,ylim=c(0,3),col=alpha("#ff9211", 0.2),
-     breaks=c(0, 0.33, 0.70, 1.00, 1.31, 1.66, 2.00, 2.31, 2.65,  3.2),
-     main="S11B",xlab="Population growth rate (lambda)")
-#S11C
-
-hist(unlist(lapply(mpm_list_recruit_S11C, lambda)),
-     freq = FALSE,ylim=c(0,3),col=alpha("#6e86e7", 0.2),
-     breaks=c(0, 0.33, 0.70, 1.00, 1.31, 1.66, 2.00, 2.31, 2.65,  3.2),
-     main="S11C",xlab="Population growth rate (lambda)")
-
-# All
-hist(unlist(lapply(StochA, lambda)),
-     freq = FALSE,ylim=c(0,3),
-     breaks=c(0, 0.33, 0.70, 1.00, 1.31, 1.66, 2.00, 2.31, 2.65,  3.2),
-     main="ALL",xlab="Population growth rate (lambda)")
-
-hist(unlist(lapply(mpm_list_recruit_S11B, lambda)),
-     freq = FALSE,add=T,col=alpha("#ff9211", 0.2),
-     breaks=c(0, 0.33, 0.70, 1.00, 1.31, 1.66, 2.00, 2.31, 2.65,  3.2))
-
-hist(unlist(lapply(mpm_list_recruit_S11C, lambda)),
-     freq = FALSE,add=T,col=alpha("#6e86e7", 0.2),
-     breaks=c(0, 0.33, 0.70, 1.00, 1.31, 1.66, 2.00, 2.31, 2.65,  3.2))
-
-```
-
 ## 9.4. Extinction growth rate
 
+
 ```{r}
-resultado<-stoch.quasi.ext(c(mpm_list_recruit_S11B,mpm_list_recruit_S11C), 
+#'-------------------------------------------------------------------------
+# Create proptable_modif a special prop table ------------------
+#'-------------------------------------------------------------------------
+## Rationale  --------------
+# proptable_modif is an adaptation of default prop.table
+# This function allow to include FALSE or TRUE when there is no legitime true or false extinction 
+#'-------------------------------------------------------------------------
+proptable_modif <- function(data, threshold) {
+  # equivalent to prop.table(table(apply(data,1,sum)> n_threshold))*100
+  res <- table(factor(apply(data, 1, sum) > threshold, levels = c(FALSE, TRUE)))
+  # Equivalent to prop.table(ext10.probS11B)*100
+  prop <- prop.table(res) * 100
+  return(prop)
+}
+##'-------------------------------------------------------------------------
+
+```
+
+
+
+```{r}
+proj.pop<-stoch.quasi.ext(mpm_list, 
               n0 = Mean_indiv$Median[1:2], 
               Nx=Mean_indiv[3,3]/10,
               maxruns=10,
               tmax = 10, nreps=1000)
-matplot(resultado, xlab="Years", ylab="Cumulative extinction risk (%)", 
+matplot(proj.pop, xlab="Years", ylab="Cumulative extinction risk (%)", 
         type='l', lty=1, col="grey20", las=1,
         main="Extinction risk \n (Proportion of simulations crossing extinction threshold of 10% initial population")
 
@@ -1146,25 +897,25 @@ n_init<-c(50,50) # define initial population
 n_threshold<-sum(n_init)*.10 # Define extinction threshold: 10% of the initial population size
 
 #Project population for 10 years based on estimated parameters
-projS11B_10<-stoch.projection(mpm_list_recruit_S11B, 
+projS11B_10<-stoch.projection(mpm_list_S11B, 
                               n_init,	#Estabelece meio indivíduo em cada estágio,logo, ao somar, teriamos quanto que a população doubrou,triplicou...
                               #	stable.stage(mean(mpm_list_recruit_S11B))*100,
                               tmax=10,nreps=1000)
 
-projS11B_30<-stoch.projection(mpm_list_recruit_S11B, 
+projS11B_30<-stoch.projection(mpm_list_S11B, 
                               n_init,tmax=30,nreps=1000)
 
 #Project population for 30 years based on estimated parameters
-projS11C_10<-stoch.projection(mpm_list_recruit_S11C, 
+projS11C_10<-stoch.projection(mpm_list_S11C, 
                               n_init,tmax=10,nreps=1000)
 
-projS11C_30<-stoch.projection(mpm_list_recruit_S11C, 
+projS11C_30<-stoch.projection(mpm_list_S11C, 
                               n_init,tmax=30,nreps=1000)
 
-projALL_10<-stoch.projection(c(mpm_list_recruit_S11B,mpm_list_recruit_S11C),
+projALL_10<-stoch.projection(mpm_list,
                              n_init,tmax=10,nreps=1000)
 
-projALL_30<-stoch.projection(c(mpm_list_recruit_S11B,mpm_list_recruit_S11C),
+projALL_30<-stoch.projection(mpm_list,
                              n_init,tmax=30,nreps=1000)
 ```
 
@@ -1299,7 +1050,7 @@ for(i in 1:length(sim_damage)){
                     damage=sim_damage[i])
   out[[i]]<-data.frame(Extinct.rate=apply(temp,1,mean),
                        SD=apply(temp,1,sd),
-                       Dano=sim_damage[i],
+                       Damage=sim_damage[i],
                        t=seq(1,tmax,by=1))
   print(paste0("Simulating damage at ",sim_damage[i]*100,"%" ))
 }
@@ -1323,9 +1074,9 @@ viab_para%>%filter(t==10)
 ```{r, fig.height=8, fig.width=14}
 viab_para%>%
   #  mutate(dano=as.factor(dano))%>%
-  ggplot(.,aes(x=t-1,y=Persistprop,group=Dano))+
-  geom_line(aes(color=Dano*100))+
-  geom_pointrange(aes(ymin=ymin, ymax=ymax,color=Dano*100))+
+  ggplot(.,aes(x=t-1,y=Persistprop,group=Damage))+
+  geom_line(aes(color=Damage*100))+
+  geom_pointrange(aes(ymin=ymin, ymax=ymax,color=Damage*100))+
   #  viridis::scale_color_viridis(option="magma")+
   scale_color_stepsn(
     #    colours = c("red", "yellow", "green", "yellow", "red"),
@@ -1337,9 +1088,9 @@ viab_para%>%
                      expand = c(0, 0),
                      breaks=c(0,10,seq(50,200,by=50)))+
   geom_hline(yintercept=10,color="tomato",linetype="dashed")+
-  labs(color="Impacto/Redução (%)",
-       y="Projeção populacional",
-       x="Anos projetados")+
+  labs(color="Impact/Reduction (%)",
+       y="Population size",
+       x="Years projected")+
   theme(legend.position="right")
 ```
 
