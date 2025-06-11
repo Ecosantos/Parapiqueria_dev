@@ -113,7 +113,7 @@ Mai25<-read.xlsx("Data/Dados parapiqueria - Completo - Consolidado 10Jun2025.xls
 
 ## 2.1. Prepare final datasets: Merging censuses & summarise
 
--   Step 1: Merge monthly censuses –\> Merge census across the years
+-   Step 1: Merge monthly censuses Merge census across the years
 
     Censuses are performed every March, April and May and need to merged to produce a timeserie.
 
@@ -201,6 +201,8 @@ Census_all_max<-rbind(
 
 #Remove censuses in plot 8 and 9 because it was not correctly sampled
 Census_all_max<-Census_all_max %>% filter(!((Plot %in% c(8,9)) & year == 2025)) 
+
+#Remove census in plot 15 in 2025 as it was extincted a year before
 #Census_all #View
 
 #Census_all_max  #View
@@ -234,21 +236,22 @@ RepTot<-left_join(
   select(VAR,Site:t0y,t1y,t0,t1)%>%	#Reorder columns
   mutate(Site=as.factor(Site))%>%
   mutate(period=as.factor(paste0(t0y,"-",t1y)))
+RepTot
 
+# No longer used
 ##### Max Rep in t0 vs. MaxIm in t1
+#RepIm<-left_join(
+#  filter(Timelags_base,stage=="MaxRep")%>%select(Site:Plot,t0y,t0),
+#  filter(Timelags_base,stage=="MaxIm")%>%select(Site:Plot,t1y,t1))%>%
+#  mutate(VAR="MaxRep>MaxIm")%>%
+#  select(VAR,Site:t0y,t1y,t0,t1)%>%	#Reorder columns
+#  mutate(Site=as.factor(Site))%>%
+#  mutate(period=as.factor(paste0(t0y,"-",t1y)))
 
-RepIm<-left_join(
-  filter(Timelags_base,stage=="MaxRep")%>%select(Site:Plot,t0y,t0),
-  filter(Timelags_base,stage=="MaxIm")%>%select(Site:Plot,t1y,t1))%>%
-  mutate(VAR="MaxRep>MaxIm")%>%
-  select(VAR,Site:t0y,t1y,t0,t1)%>%	#Reorder columns
-  mutate(Site=as.factor(Site))%>%
-  mutate(period=as.factor(paste0(t0y,"-",t1y)))
 
-RepTot # Exemplo de resultado
 ```
 
-### 2.4. Transform censuses in timeseries to estimate survival
+### 2.4. Transform censuses in time series to estimate survival
 
 ```{r}
 
@@ -345,6 +348,7 @@ all_census_df
 Describe proportion of individuals in each stage along the year.
 
 <!-- remember, these are proportions juveniles/adult, so they should have similar SD -->
+
 ```{r}
 all_census_df %>%
   pivot_longer(cols = c(Mar, Apr, May), names_to = "Month", values_to = "Count") %>%
@@ -362,136 +366,15 @@ all_census_df %>%
 mutate(Month = factor(Month, levels = c("Mar", "Apr", "May")))%>%arrange(Month)
 ```
 
-# 3. Recruitment analyses
-
-## 3.1. Packages
-
-```{r message=FALSE, warning=FALSE}
-library(lme4)
-library(DHARMa)
-library(performance)
-library(glmmTMB)
-library(MuMIn)
-
-options(na.action=na.fail) #Necessary for correct use of MuMIn
-```
-
-## 3.2. Estimating recruitment based on the maximum reproductive individuals
-
-Assessing if the maximum number of total individuals in $t_1$ can be predicted by the maximum number of of reproductive in the year before $t_0$ <!--# Previous analyses comparing if the model better predicts total individuals or number of immature. Total immature has a slightly better AIC than total individuals but its rationale is not straightforward. Moreover, simulation show lower lambdas which is unlikely-->
-
-Negative binomial has the best fit
-
-```{html,label="how choose best glm model", eval=FALSE, include=FALSE, code_folding="hide"}
-<!--
-###  Poisson model worst performed and several warning message
-pois_RepIm<-glmmTMB::glmmTMB(t1~0+t0*Site+(1|period), 
-      family=poisson(link = "log"),data=RepIm)
-
-dredge(pois_RepIm)
-
-# RESULT
-  dsp((Int)) cnd(Sit)  cnd(t0) cnd(Sit:t0) df   logLik   AICc  delta weight
-4          +        + 0.005436              4 -642.156 1293.5   0.00  0.663
-8          +        + 0.004913           +  5 -641.522 1294.8   1.35  0.337
-2          +        +                       3 -714.134 1434.9 141.48  0.000
-3          +          0.004766              2 -750.634 1505.6 212.14  0.000
--->
-```
-
-<!-- # Site is no longer included in the best model for reproduction but it is still significantly differently
-
-# NEED TO UPDATE IN THE CODE BELOW
---> 
-```{r message=FALSE, warning=FALSE, cache=TRUE}
-nb_RepTot<-glmmTMB::glmmTMB(t1~0+t0*Site+(1|period),
-                           family=nbinom2(link = "log"),data=RepTot)
-
-
-nb_RepTot_ls<-dredge(nb_RepTot)%>%get.models(subset=NA)
-
-nb_RepTot_df<-data.frame(
-  formula=format(cbind(lapply(nb_RepTot_ls,formula))),
-  Var="Rep>Tot",Dist="Neg.Bin",
-  AICcmodavg::aictab(nb_RepTot_ls))
-
-nb_RepTot_df
-```
-
-```{r message=FALSE, warning=FALSE}
-# Best model is t1~0+t0+Site+(1|census) Negative binomial
-BestModel<-update(nb_RepTot,t1~0+t0+Site+(1|period))
-BestModel%>%parameters::parameters(.,exponentiate =F)
-```
-
-Check differences between streams
-
-```{r}
-car::Anova(BestModel)
-```
-
-```{html, label="Including or not intercept in the model", eval=FALSE, include=FALSE, code_folding="hide"}
-#  IMPORTANTE!
-Uma coisa que me gerou muita insegurança no passado e ainda é uma questão pra mim é se eu deveria ou não incluir o intercepto nesses modelos. 
-
-Uma análise mais atenciosa no entanto revela que essa não deveria ser uma questão. 
-# 
-O modelo por exemplo
-bestS11B(t1 ~ 0 + t0 + (1|period)) remove o intercepto e estima o efeito de beta t0 em 0.009382 
-Já com a remoção do intercepto o valor passa a ser 0.009047. 
-
-Quando convertido para o exponencial (para voltar a únidade de medida de individuos) temos então 1.009426 e 1.009088 respectivamente. Uma diferença de 0.000338, que PROVAVELMENTE é irrelevante para o modelo.
-
-
-De forma similar temos 
-
-
-beta t0 = 0.007173 em BestModel (modelo global que compara entre sítios e remove o intercepto)
-e  temos exatamente o mesmo valor (beta t0 =  0.007173) para o modelo incluindo o intercepto!
-
-Eles são o mesmo? Sim porém ao incluir o intercept somos também capazes de ter uma estimativa direta da diferença entre os modelos
-             Estimate Std. Error z value Pr(>|z|)    
-(Intercept)  3.939961   0.273631  14.399   <2e-16 ***
-t0           0.007173   0.003201   2.241   0.0251 *  
-SiteS11B    -0.575314   0.229811  -2.503   0.0123 *       # Fica claro que os recrutamentos são diferentes!!!
-
-enquanto que ao remover o intercepto temos 
-Conditional model:
-         Estimate Std. Error z value Pr(>|z|)    
-t0       0.007173   0.003201   2.241   0.0251 *  
-SiteS11C 3.939963   0.273631  14.399   <2e-16 ***
-SiteS11B 3.364650   0.297025  11.328   <2e-16 ***
-
-O modelo apesar de parecer apresentar resultados diferentes não o faz. Pq se diminuiirmos beta SiteS11C e beta SiteS11B temos exatamente a diferença de Beta siteS11B calculada quando temos o intercepto
-
-SiteS11B-SiteS11C =  3.364650 - 3.939963 = -0.575314
-
-```
-
-```{r eval=FALSE, include=FALSE}
-
-ggeffects::predict_response(
-  BestModel,terms=c("t0[0:208]", #[0,208] represent the minimum and maximum individuals record in plot per month and pear stage(?)
-          "Site","period"))%>%plot()
-
-```
-
-```{r}
-# Apply the same structure of the best model but for each stream
-bestS11B<-update(BestModel,~0+t0+(1|period), data=filter(RepIm,Site=="S11B"))
-bestS11C<-update(BestModel,~0+t0+(1|period), data=filter(RepIm,Site=="S11C"))
-```
-
 # 4. Inverse model implementation
-
-<!--# FUNCTION WOODPAR REMOVED -->
 
 ## 4.1. Creates an working example[^1]
 
 So, let's consider the following MPM:
 
 $$
-A= \begin{bmatrix}
+A=
+\begin{bmatrix}
 S_{1,1} & R_{1,2} \\
 S_{2,1} & S_{2,2} \\
 \end{bmatrix}
@@ -502,23 +385,28 @@ S_{2,1} & S_{2,2} \\
 
 \\
 
-U= \begin{bmatrix}
+U=
+
+\begin{bmatrix}
 S_{1,1} & 0 \\
 S_{2,1} & S_{2,2} \\
 \end{bmatrix}
-~~ \text{and} ~~ 
-F= \begin{bmatrix}
+
+~~ \text{and} ~~ F=
+
+\begin{bmatrix}
 0 & R_{1,2} \\
 0 & 0 \\
 \end{bmatrix}
-
-
 $$
+
+
 The respective MPM represents the individuals transition during the period Mar-May, represented by $U$
 
 Non-zero elements in matrix $U$ are $S_{1,1}, S_{2,1}, \tex{end}, S_{2,2}$.
 
 Now, we creates an hypothetical matrix and the non-zero elements
+
 ```{r, label="creates an hipothetical matrix"}
 AA <- matrix(c(1,1,0,0),ncol=2)
 AA
@@ -528,12 +416,13 @@ nonzero<-which(AA> 0); nonzero
 
 ```
 
-To run the `QPmat` function, we need to inform:
-- Demographic restrictions, represented by matrix $C$;
-- Non-zero elements already informed;
+To run the `QPmat` function, we need to inform: 
+
+- Demographic restrictions, represented by matrix $C$; 
+- Non-zero elements already informed; 
 - All vital rates have same weight $b$ element.
 
-Matrix C is described as: 
+Matrix C is described as:
 
 $$
 C = 
@@ -552,24 +441,26 @@ C =
   \ S_{1,1} + S_{2,1} ≤ 1 \\
   \ S_{2,2} ≤ 1 \\
 \end{array}
-$$
-Informing this to R, we have,
+$$ 
+
+To construct the C matrix in R, we do,
+
 ```{r}
 C<- rbind(
   c(-1,  0),  # -a11 ≤ 0
   c( 0, -1),  # -a21 ≤ 0
   c( 1,  1)   # a11 + a21 ≤ 1
 )
-b <- c(0, 0, 1)
-```
 
+b <- c(0, 0, 1) # Creates the weight of each vital rate
+```
 
 # 5. Applying the quadratic programming
 
 ```{r}
-mpm_list_bkp<-mpm_list<-NULL
+U_list_bkp<-U_list<-NULL
 for(i in 1:length(all_census_ts)){
-mpm_list_bkp[[i]]<-mpm_list[[i]]<-tryCatch(
+U_list_bkp[[i]]<-U_list[[i]]<-tryCatch(
 		QPmat(all_census_ts[[i]]%>%as.matrix(), 
 			C,
 			b,
@@ -577,29 +468,31 @@ mpm_list_bkp[[i]]<-mpm_list[[i]]<-tryCatch(
  error = function(e) { return(NA)})
 }
 
-names(mpm_list)<-names(mpm_list_bkp)<-names(all_census_ts)
+names(U_list)<-names(U_list_bkp)<-names(all_census_ts)
 
-mpm_list[1]
+U_list[1]
 ```
 
 ## 5.1. Remove plots where vital rates could not be estimated
 
--   Two plots at S11B could not have demographic information estimated because individuals are close to zero.
+-   Two plots at S11B could not have demographic information estimated because individuals are zero or too close to zero.
+
 -   Plots are:
--   Plot_19_2022 - Only adult individuals recorded?
--   Plot_15_2024 - Only 2 individuals in March
--   Plot_15_2025 - Removed because it was already exctincted a year before
+
+  -   Plot_19_2022 - Only adult individuals recorded?
+  
+  -   Plot_15_2024 - Only 2 individuals in March
+  
 ##### Decisions
-
 -   Plot_15_2024 was below a extinction threshold, so, it is necessary to be included in the analyses.
+
+    -   Plot_15_2025 - Removed because it was already exctincted a year before 
+
 -   Plot_19_2022 we cannot decided if it is a sampling error or a biological process so it was removed
-
-
-<!--# 2025 is exticted in 2024, so, I suspect it is better to remove, Anyway, it gives problem also --> 
 
 ```{r}
 # Detect plots with problems
-problems_plots<-mpm_list_bkp[lapply(lapply(mpm_list_bkp,complete.cases),any,FALSE)=="FALSE"]
+problems_plots<-U_list_bkp[lapply(lapply(U_list_bkp,complete.cases),any,FALSE)=="FALSE"]
 
 problems_plots
 
@@ -609,9 +502,9 @@ all_census_ts[names(problems_plots)]
 zero_mpm<-list()
 zero_mpm[[1]]<-matrix(rep(0,4),2)
 
-mpm_list_bkp[names(mpm_list_bkp) %in% names(problems_plots)]
-mpm_list_bkp[names(mpm_list_bkp) %in% c("Plot_15_2024","Plot_15_2025")]<-zero_mpm  #Include zero matrices in the list of estiamted matrices
-mpm_list_bkp[names(mpm_list_bkp) %in% names(problems_plots)]
+U_list_bkp[names(U_list_bkp) %in% names(problems_plots)]
+U_list_bkp[names(U_list_bkp) %in% c("Plot_15_2024","Plot_15_2025")]<-zero_mpm  #Include zero matrices in the list of estiamted matrices
+U_list_bkp[names(U_list_bkp) %in% names(problems_plots)]
 
 
 #Census2022_ts$Plot_15_2022 #Show trajectory of the abundance
@@ -622,47 +515,78 @@ mpm_list_bkp[names(mpm_list_bkp) %in% names(problems_plots)]
 # Remove plot 15 2025 as it was already extincted
 
 # remove Plot 19 2022 because we do not know if it was estimated correctly
-mpm_list <- mpm_list_bkp[!(names(mpm_list)%in%c("Plot_19_2022","Plot_15_2025"))]
+U_list <- U_list_bkp[!(names(U_list)%in%c("Plot_19_2022","Plot_15_2025"))]
 ```
 
 # 6. Quadratic programming efficiency
+
 -   Simulate an hypothetical population to assess model's accuracy
-  -   Hypothetical population was created based on the matrix structure we expect for *Parapiqueria*.
-    -   Matrix is
-        -   2x2
-        -   Divided in juveniles and adults
-        -   Does not includes recruitment because it cannot be estimated within year (March-May)
-        -   We assume adults reproduce once and become senescent. So, stage $S_{2,2}$ represents senescent adults and cannot contribute to population growth rate. Two tests with and without the model were performed for efficiency;
-            -   Senescent adults were kept in the matrix, as it helps to estimate demographic parameters, but must be removed during elasticity analyses
+-   Hypothetical population was created based on the matrix structure we expect for *Parapiqueria*. - Matrix is
+    -   2x2
+    -   Divided in juveniles and adults
+    -   Does not includes recruitment because it cannot be estimated within year (March-May)
+    -   We assume adults reproduce once and become senescent. So, stage $S_{2,2}$ represents senescent adults and cannot contribute to population growth rate. Two tests with and without the model were performed for efficiency;
+        -   Senescent adults were kept in the matrix, as it helps to estimate demographic parameters, but must be removed during elasticity analyses
 
 ```{r include=FALSE, echo=TRUE}
 #file.edit("ModelToyv1.R") 
 #source("ModelToyv1.R")
 ```
 
-#```{r fig.height=5, fig.width=14}
-#the object VRs_dif_df was created in "ModelToyv1.R"
-VRs_dif_df%>%
-  filter(matrix=="A2")%>%
-  ggplot(.,aes(x=census,y=Mean,group=census))+
-  geom_pointrange(aes(ymin=Mean-SD,ymax=Mean+SD,
-                      group=census,color=census,shape=matrix),
-                  position = position_dodge2(width = 0.7))+
-  ylab("Error")+xlab("# censuses")+
-  scale_y_continuous(label=scientific_10)+
-  scale_color_manual(values=c(
-    '#ff6347', '#6e8ab6', '#5b7bb3', '#496daf', '#375fa9', '#2350a4', '#00429d'))+
-  geom_hline(yintercept=0,color="red",linetype=2)+
-  scale_x_discrete(labels=function(l) parse(text=l))+
-  theme_minimal(base_size=24)+
-  facet_wrap(.~stages,scales="free",ncol=3)
-#```
+\#`{r fig.height=5, fig.width=14} #the object VRs_dif_df was created in "ModelToyv1.R" VRs_dif_df%>%   filter(matrix=="A2")%>%   ggplot(.,aes(x=census,y=Mean,group=census))+   geom_pointrange(aes(ymin=Mean-SD,ymax=Mean+SD,                       group=census,color=census,shape=matrix),                   position = position_dodge2(width = 0.7))+   ylab("Error")+xlab("# censuses")+   scale_y_continuous(label=scientific_10)+   scale_color_manual(values=c(     '#ff6347', '#6e8ab6', '#5b7bb3', '#496daf', '#375fa9', '#2350a4', '#00429d'))+   geom_hline(yintercept=0,color="red",linetype=2)+   scale_x_discrete(labels=function(l) parse(text=l))+   theme_minimal(base_size=24)+   facet_wrap(.~stages,scales="free",ncol=3) #`
+
+# 7. Producing final matrix models
 
 
+## 7.1 Transform observed recruitment in F matrices
 
-# 7. Producing finam matrix models
+```{r}
+Recruit_asmx<- RepTot %>%
+  mutate(id = paste0("Plot_", Plot, "_", year)) %>%  # Produce a list of plots_year similar to U_list
+  mutate(
+    fecundity = t1 / t0,  # fecundidade observada bruta
+#    fecundity = ifelse(is.nan(fecundity) | fecundity < 0, 0, fecundity), # segurança
+    F_matrix = map(fecundity, ~ {
+      mat <- matrix(0, nrow=2, ncol=2)
+      mat[1,2] <- .x
+      mat
+    })
+  )
 
-## 7.2. Merging recruitment with survival dependent vital rates
+
+F_list <- Recruit_asmx %>%
+  select(id, F_matrix) %>%
+  mutate(id = as.character(id)) %>%
+  { set_names(.$F_matrix, .$id) }
+
+
+F_list [[1]]
+```
+
+
+## 7.2. Merging F matrices and U matrices
+
+<!-- note that i cannot estimat recruitment from 2025 at the moment as 2026 year is lacking information.
+So, only MPM from 2022-2024 were produced. So, F_list and U_list are better objects to estimate effect along the year in vital rates meanwhile mpm_list is the correct object to estimate lambda and make the simulations.
+-->
+
+```{r}
+# Align the matrices to make sure F is defined for the correct plot
+
+common_names <- intersect(names(U_list), names(F_list))
+
+# 2. Subsetar e reordenar as listas
+U_list_aligned <- U_list[common_names]
+F_list_aligned <- F_list[common_names]
+
+#Check if names are aligned
+names(F_list_aligned) == names(U_list_aligned)
+
+mpm_list <-Map(`+`, U_list_aligned, F_list_aligned)
+
+
+```
+
 
 ### 7.3. Separe MPMs by streams
 
@@ -674,41 +598,6 @@ mpm_list_S11B<-mpm_list[grep("^Plot_(1[1-9]|20)_.*$", names(mpm_list))]
 
 #Check
 mpm_list_S11C%>%names()
-```
-
-## 7.2. Build MPM $A$ for each stream
-
-### 7.2.1. Transform Recruitment in matrix $F$
-
-Each stream has a proper mean $F$ matrix
-
-```{r}
-mean_matF_S11B<-matrix(
-	c(0,0,
-	exp(fixef(bestS11B)$cond[[1]]),
-	  0),ncol=2)
-
-mean_matF_S11C<-matrix(
-	c(0,0,
-	exp(fixef(bestS11C)$cond[[1]]),
-	  0),ncol=2)
-
-
-#Show matrix F
-list(mean_matF_S11B, mean_matF_S11C)
-```
-
-### 7.2.2. Merging components of MPM $A = U + F$
-
-```{r}
-mpm_list_recruit_S11C<-Map(`+`, mpm_list_S11C, list(mean_matF_S11C))
-mpm_list_recruit_S11B<-Map(`+`, mpm_list_S11B, list(mean_matF_S11B))
-
-# Merge in a single list for statistics
-mpm_list_recruit_full<-c(mpm_list_recruit_S11C,mpm_list_recruit_S11B)
-
-# Example
-mpm_list_recruit_full[1]
 ```
 
 # 8. Summary results
@@ -736,10 +625,18 @@ statrep<- function(data, group_vars, value_var = "value") {
 Transform vital rates into a data.frame to proceed with statistical analyses
 
 ```{r}
-vr.df<-data.frame(do.call(rbind,lapply(mpm_list_recruit_full,as.vector)),var="vr")%>%rownames_to_column(var = "VAR")%>%
-as_tibble()%>%
-  setNames(c("VAR","S1","S2","R","S4","var"))%>%
-separate(VAR,sep="_",into = c("x", "Plot", "year"))%>%
+#Accomodate matrices in two different datasets
+F_mxdf<-data.frame(do.call(rbind,lapply(F_list,as.vector)),VR="vr")%>%rownames_to_column(var = "plot_year")
+
+U_mxdf<-data.frame(do.call(rbind,lapply(U_list,as.vector)),VR="vr")%>%rownames_to_column(var = "plot_year")
+
+# Merge these datasets
+vr.df<-left_join(by="plot_year",
+U_mxdf%>%  select(-X3),   #For dataset of U matrices, Recruitment (X3) is not relevant
+F_mxdf%>%  select(c(plot_year,X3)) #For dataset of F matrices, Recruitment (X3) is the unique relevant informatiob
+)%>% relocate(X3, .before = X4)%>%
+setNames(c("plot_year","S1","S2","R","S4","VR"))%>%
+separate("plot_year",sep="_",into = c("x", "Plot", "year"))%>%
 select(-x)%>%
 pivot_longer(S1:S4,values_to="value",names_to="vital_rate")%>%
 mutate(Plot=as.numeric(Plot),
@@ -751,7 +648,7 @@ mutate(Site=ifelse(Plot<11,"S11C","S11B"))
 
 ```{r}
 vr.df%>%
-filter(vital_rate!=c("R","S4"))%>%
+filter(vital_rate!=c("S4"))%>%
 statrep(., group_vars = c("vital_rate"),value_var = "value")
 ```
 
@@ -759,7 +656,7 @@ statrep(., group_vars = c("vital_rate"),value_var = "value")
 
 ```{r}
 vr.df%>%
-filter(vital_rate!=c("R","S4"))%>%
+filter(vital_rate!=c("S4"))%>%
   statrep(., group_vars = c("vital_rate", "Site"),value_var = "value")%>%
     group_by(Site)%>% group_split()
 ```
@@ -768,12 +665,13 @@ filter(vital_rate!=c("R","S4"))%>%
 
 ```{r}
 vr.df%>%
-  filter(vital_rate!="R")%>%        # Recruitment need to be removed as it is a mean deterministic value, without variation. Note that difference in recruit was alread tested in the Recruitment section above
-  select(-c(year,var))%>%
+  filter(vital_rate!="S4")%>%   
+  filter(complete.cases(.))%>%       # Recruitment in  plot_15_2024 could not be extimeted as this plot reached exticntion in 2024. 
+  select(-c(year,VR))%>%
   nest(data=c(Plot,Site,value))%>%
   mutate(pairwise= map(data, ~ t.test(value ~ Site, data = .)))%>%
   pull(pairwise)%>%
-  purrr::set_names(c("Stasis[Immat]", "Growth[Immat.>Adult]", "Surv[Adult]"))%>%
+  purrr::set_names(c("Stasis[Immat]", "Growth[Immat.>Adult]", "Recruitment"))%>%
   tibble(
     Comparison = names(.),
     t_value = map_dbl(., ~ .x$statistic),
@@ -792,13 +690,14 @@ vr.df%>%
 ```{r}
 # Similar to above. Main difference is in the nest process
 vr.df%>%
-  filter(vital_rate!="R")%>%
-  select(-c(Plot,Site,var))%>%
+  filter(vital_rate!="S4")%>%   
+  filter(complete.cases(.))%>%       # Recruitment in  plot_15_2024 could not be extimeted as this plot reached exticntion in 2024. 
+  select(-c(Plot,Site,VR))%>%
   mutate(year=as.numeric(year))%>%
   nest(data=c(year,value))%>% #only year and value are considered here
   mutate(pairwise= map(data, ~ cor.test(.$value, .$year,method="pearson")))%>% #cor.test instead of t.test
   pull()%>%
-  purrr::set_names(c("Stasis[Immat]", "Growth[Immat.>Adult]", "Surv[Adult]"))%>%
+  purrr::set_names(c("Stasis[Immat]", "Growth[Immat.>Adult]", "Recruitment"))%>%
   tibble(
     Vital_rate = names(.),
     Correlation = map_dbl(., ~ .x$estimate[1]),
@@ -810,34 +709,36 @@ vr.df%>%
 
 ```
 
-```{r}
+```{r, fig.width=14,fig.height=5}
 vr.df%>%
   statrep(., group_vars = c("vital_rate","year","Site"))%>%
-# filter(vital_rate!="R")%>%
-  mutate(VR="Survival")%>%
-mutate(stages=case_when(vital_rate=="S1"~ "Stasis[Immat]",
-				vital_rate=="S2"~ "Growth[Immat.>Adult]",
-				vital_rate=="R"~ "Recruitment",
-				vital_rate=="S4"~ "Surv[Adult]"))%>%
-mutate(stages=forcats::fct_relevel(stages, c("Statis[Immat]","Growth[Immat.>Adult]", "Surv[Adult]","Recruitment")))%>%
-filter(!(vital_rate %in% c("R","S4")))%>%
-ggplot(.,aes(y=Mean,x=stages,group=year))+
-geom_pointrange(aes(ymin=Mean-SE,ymax=Mean+SE,color=Site,shape=year),alpha=0.8,
-	position = position_dodge2(width = 0.4))+
-scale_x_discrete(labels=function(l) parse(text=l))+
-scale_color_manual(values=c("#ff9211","#6e86e7"))+
-theme_bw(base_size=16)+
-theme(legend.position="bottom")+
-facet_grid(.~VR)+
-xlab(NULL)+ylab(NULL)
+  # filter(vital_rate!="R")%>%
+  mutate(VR=ifelse(vital_rate=="R","Recruitment","Survival"))%>%
+  mutate(stages=case_when(vital_rate=="S1"~ "Stasis[Immat]",
+                          vital_rate=="S2"~ "Growth[Immat.>Adult]",
+                          vital_rate=="R"~ "Recruitment",
+                          vital_rate=="S4"~ "Surv[Adult]"))%>%
+  mutate(stages=forcats::fct_relevel(stages, c("Statis[Immat]","Growth[Immat.>Adult]", "Surv[Adult]","Recruitment")))%>%
+  filter(!(vital_rate %in% c("S4")))%>%
+  ungroup()%>%
+  ggplot(.,aes(y=Mean,x=stages,group=year))+
+  geom_pointrange(aes(ymin=Mean-SE,ymax=Mean+SE,color=Site,shape=year),alpha=0.8,
+                  position = position_dodge2(width = 0.4))+
+#  scale_x_discrete(labels=function(l) parse(text=l))+
+  scale_x_discrete(drop=TRUE)+
+  scale_color_manual(values=c("#ff9211","#6e86e7"))+
+  theme_bw(base_size=24)+
+  theme(legend.position="bottom")+
+  facet_wrap(.~VR,scales="free")+
+  xlab(NULL)+ylab(NULL)
 ```
 
 ```{r}
 lambsSite<-rbind(
-do.call(rbind,lapply(mpm_list_recruit_S11C,lambda))%>%
-	data.frame(Site="S11C",mod="model")%>%
+do.call(rbind,lapply(mpm_list_S11C,lambda))%>%
+	data.frame(Site="S11C")%>%
 			rownames_to_column(var = "VAR"),
-do.call(rbind,lapply(mpm_list_recruit_S11B,lambda))%>%
+do.call(rbind,lapply(mpm_list_S11B,lambda))%>%
 	data.frame(Site="S11B",mod="model")%>%
 			rownames_to_column(var = "VAR"))
 
@@ -932,6 +833,122 @@ LTREyear%>%mean()
 #Variance
 LTREyear%>%popbio::var2()
 
+```
+
+## 
+
+# 3. Recruitment analyses
+
+## 3.1. Packages
+
+```{r message=FALSE, warning=FALSE} library(lme4) library(DHARMa) library(performance) library(glmmTMB) library(MuMIn)  options(na.action=na.fail) #Necessary for correct use of MuMIn}
+```
+
+## 3.2. Estimating recruitment based on the maximum reproductive individuals
+
+Assessing if the maximum number of total individuals in $t_1$ can be predicted by the maximum number of of reproductive in the year before $t_0$ <!--# Previous analyses comparing if the model better predicts total individuals or number of immature. Total immature has a slightly better AIC than total individuals but its rationale is not straightforward. Moreover, simulation show lower lambdas which is unlikely-->
+
+Negative binomial has the best fit
+
+```{html,label="how choose best glm model", eval=FALSE, include=FALSE, code_folding="hide"}
+<!--
+###  Poisson model worst performed and several warning message
+pois_RepIm<-glmmTMB::glmmTMB(t1~0+t0*Site+(1|period), 
+      family=poisson(link = "log"),data=RepIm)
+
+dredge(pois_RepIm)
+
+# RESULT
+  dsp((Int)) cnd(Sit)  cnd(t0) cnd(Sit:t0) df   logLik   AICc  delta weight
+4          +        + 0.005436              4 -642.156 1293.5   0.00  0.663
+8          +        + 0.004913           +  5 -641.522 1294.8   1.35  0.337
+2          +        +                       3 -714.134 1434.9 141.48  0.000
+3          +          0.004766              2 -750.634 1505.6 212.14  0.000
+-->
+```
+
+<!-- # Site is no longer included in the best model for reproduction but it is still significantly differently
+
+# NEED TO UPDATE IN THE CODE BELOW
+-->
+
+```{r message=FALSE, warning=FALSE, cache=TRUE}
+nb_RepTot<-glmmTMB::glmmTMB(t1~0+t0*Site+(1|period),
+                           family=nbinom2(link = "log"),data=RepTot)
+
+
+nb_RepTot_ls<-dredge(nb_RepTot)%>%get.models(subset=NA)
+
+nb_RepTot_df<-data.frame(
+  formula=format(cbind(lapply(nb_RepTot_ls,formula))),
+  Var="Rep>Tot",Dist="Neg.Bin",
+  AICcmodavg::aictab(nb_RepTot_ls))
+
+nb_RepTot_df
+```
+
+```{r message=FALSE, warning=FALSE}
+# Best model is t1~0+t0+Site+(1|census) Negative binomial
+BestModel<-update(nb_RepTot,t1~0+t0+Site+(1|period))
+BestModel%>%parameters::parameters(.,exponentiate =F)
+```
+
+Check differences between streams
+
+```{r}
+car::Anova(BestModel)
+```
+
+```{html, label="Including or not intercept in the model", eval=FALSE, include=FALSE, code_folding="hide"}
+#  IMPORTANTE!
+Uma coisa que me gerou muita insegurança no passado e ainda é uma questão pra mim é se eu deveria ou não incluir o intercepto nesses modelos. 
+
+Uma análise mais atenciosa no entanto revela que essa não deveria ser uma questão. 
+# 
+O modelo por exemplo
+bestS11B(t1 ~ 0 + t0 + (1|period)) remove o intercepto e estima o efeito de beta t0 em 0.009382 
+Já com a remoção do intercepto o valor passa a ser 0.009047. 
+
+Quando convertido para o exponencial (para voltar a únidade de medida de individuos) temos então 1.009426 e 1.009088 respectivamente. Uma diferença de 0.000338, que PROVAVELMENTE é irrelevante para o modelo.
+
+
+De forma similar temos 
+
+
+beta t0 = 0.007173 em BestModel (modelo global que compara entre sítios e remove o intercepto)
+e  temos exatamente o mesmo valor (beta t0 =  0.007173) para o modelo incluindo o intercepto!
+
+Eles são o mesmo? Sim porém ao incluir o intercept somos também capazes de ter uma estimativa direta da diferença entre os modelos
+             Estimate Std. Error z value Pr(>|z|)    
+(Intercept)  3.939961   0.273631  14.399   <2e-16 ***
+t0           0.007173   0.003201   2.241   0.0251 *  
+SiteS11B    -0.575314   0.229811  -2.503   0.0123 *       # Fica claro que os recrutamentos são diferentes!!!
+
+enquanto que ao remover o intercepto temos 
+Conditional model:
+         Estimate Std. Error z value Pr(>|z|)    
+t0       0.007173   0.003201   2.241   0.0251 *  
+SiteS11C 3.939963   0.273631  14.399   <2e-16 ***
+SiteS11B 3.364650   0.297025  11.328   <2e-16 ***
+
+O modelo apesar de parecer apresentar resultados diferentes não o faz. Pq se diminuiirmos beta SiteS11C e beta SiteS11B temos exatamente a diferença de Beta siteS11B calculada quando temos o intercepto
+
+SiteS11B-SiteS11C =  3.364650 - 3.939963 = -0.575314
+
+```
+
+```{r eval=FALSE, include=FALSE}
+
+ggeffects::predict_response(
+  BestModel,terms=c("t0[0:208]", #[0,208] represent the minimum and maximum individuals record in plot per month and pear stage(?)
+          "Site","period"))%>%plot()
+
+```
+
+```{r}
+# Apply the same structure of the best model but for each stream
+bestS11B<-update(BestModel,~0+t0+(1|period), data=filter(RepIm,Site=="S11B"))
+bestS11C<-update(BestModel,~0+t0+(1|period), data=filter(RepIm,Site=="S11C"))
 ```
 
 # 9. Extinction risk
@@ -1049,17 +1066,15 @@ StochA[[1]]
 
 ```
 
-
-
 ```{r}
 data.frame(
   rbind(
     c(
     lapply(StochA,lambda)%>%unlist%>%mean,
-    lapply(mpm_list_recruit_full,lambda)%>%unlist%>%mean),
+    lapply(mpm_list,lambda)%>%unlist%>%mean),
     c(
     lapply(StochA,lambda)%>%unlist%>%sd,
-    lapply(mpm_list_recruit_full,lambda)%>%unlist%>%sd)
+    lapply(mpm_list,lambda)%>%unlist%>%sd)
     ),
   row.names=c("Mean_lambda","sd_lambda"))%>%
   setNames(c("Simulated","Observed"))
@@ -1068,7 +1083,7 @@ data.frame(
 ```{r}
 rbind(
 lapply(StochA,lambda)%>%unlist%>%range,
-lapply(mpm_list_recruit_full,lambda)%>%unlist%>%range)
+lapply(mpm_list,lambda)%>%unlist%>%range)
 ```
 
 ### 9.3.2. Check values
@@ -1152,8 +1167,6 @@ projALL_10<-stoch.projection(c(mpm_list_recruit_S11B,mpm_list_recruit_S11C),
 projALL_30<-stoch.projection(c(mpm_list_recruit_S11B,mpm_list_recruit_S11C),
                              n_init,tmax=30,nreps=1000)
 ```
-
-
 
 ```{r}
 
@@ -1278,7 +1291,7 @@ out<-NULL
 
 tmax=11   #Years simulated (from t0 to t10)
 for(i in 1:length(sim_damage)){
-  temp<-Myviab_func(mpm_list_recruit_full, 
+  temp<-Myviab_func(mpm_list, 
                     n0 = Mean_indiv$Median[1:2], 
                     Nx=Mean_indiv[3,3]/10,        #Mean_indiv[3,3]/10 representa 10% dos indivíduos médios
                     maxruns=100,                   # Número de réplicas em cada simulação?
