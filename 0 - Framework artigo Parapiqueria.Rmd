@@ -7,7 +7,7 @@ params:
   update_dat:  !r paste(format(Sys.time(), '%Y-%m-%d (%H:%M:%S)'))
   orig_dat: "05/08/2024"
 output: 
-  html_notebook: 
+  html_document: 
     theme: paper
     code_folding: show
     toc: true
@@ -90,19 +90,24 @@ sessionInfo()
 # 2. Data Loading and standardization
 
 ```{r}
-Mar22<-read.xlsx("Dados brutos/Dados parapiqueria - Completo - Consolidado 05Aug2024.xlsx",sheet="Março2022")
-Abr22<-read.xlsx("Dados brutos/Dados parapiqueria - Completo - Consolidado 05Aug2024.xlsx",sheet="Abril2022")
-Mai22<-read.xlsx("Dados brutos/Dados parapiqueria - Completo - Consolidado 05Aug2024.xlsx",sheet="Maio2022")
+Mar22<-read.xlsx("Data/Dados parapiqueria - Completo - Consolidado 10Jun2025.xlsx",sheet="Março2022")
+Abr22<-read.xlsx("Data/Dados parapiqueria - Completo - Consolidado 10Jun2025.xlsx",sheet="Abril2022")
+Mai22<-read.xlsx("Data/Dados parapiqueria - Completo - Consolidado 10Jun2025.xlsx",sheet="Maio2022")
 
 ### 2023
-Mar23<-read.xlsx("Dados brutos/Dados parapiqueria - Completo - Consolidado 05Aug2024.xlsx",sheet="Março2023")
-Abr23<-read.xlsx("Dados brutos/Dados parapiqueria - Completo - Consolidado 05Aug2024.xlsx",sheet="Abril2023")
-Mai23<-read.xlsx("Dados brutos/Dados parapiqueria - Completo - Consolidado 05Aug2024.xlsx",sheet="Maio2023")
+Mar23<-read.xlsx("Data/Dados parapiqueria - Completo - Consolidado 10Jun2025.xlsx",sheet="Março2023")
+Abr23<-read.xlsx("Data/Dados parapiqueria - Completo - Consolidado 10Jun2025.xlsx",sheet="Abril2023")
+Mai23<-read.xlsx("Data/Dados parapiqueria - Completo - Consolidado 10Jun2025.xlsx",sheet="Maio2023")
 
 ### 2024
-Mar24<-read.xlsx("Dados brutos/Dados parapiqueria - Completo - Consolidado 05Aug2024.xlsx",sheet="Março2024")
-Abr24<-read.xlsx("Dados brutos/Dados parapiqueria - Completo - Consolidado 05Aug2024.xlsx",sheet="Abril2024")
-Mai24<-read.xlsx("Dados brutos/Dados parapiqueria - Completo - Consolidado 05Aug2024.xlsx",sheet="Maio2024")
+Mar24<-read.xlsx("Data/Dados parapiqueria - Completo - Consolidado 10Jun2025.xlsx",sheet="Março2024")
+Abr24<-read.xlsx("Data/Dados parapiqueria - Completo - Consolidado 10Jun2025.xlsx",sheet="Abril2024")
+Mai24<-read.xlsx("Data/Dados parapiqueria - Completo - Consolidado 10Jun2025.xlsx",sheet="Maio2024")
+
+### 2025
+Mar25<-read.xlsx("Data/Dados parapiqueria - Completo - Consolidado 10Jun2025.xlsx",sheet="Março2025")
+Abr25<-read.xlsx("Data/Dados parapiqueria - Completo - Consolidado 10Jun2025.xlsx",sheet="Abril2025")
+Mai25<-read.xlsx("Data/Dados parapiqueria - Completo - Consolidado 10Jun2025.xlsx",sheet="Maio2025")
 
 ```
 
@@ -123,6 +128,19 @@ Mai24<-read.xlsx("Dados brutos/Dados parapiqueria - Completo - Consolidado 05Aug
 
 ```{r message=FALSE, warning=FALSE}
 
+#2025
+census2025<-rbind(
+  data.frame(Mar25,Month="3"),
+  data.frame(Abr25,Month="4"),
+  data.frame(Mai25,Month="5"))%>%
+  as_tibble()%>%
+  group_by(Site,Plot,Month)%>%    #Quadrants not included
+  summarise(Imaturos=sum(Imaturos),
+            Reprodutivos=sum(Reprodutivos))%>%
+  ungroup()
+
+
+#2024
 census2024<-rbind(
   data.frame(Mar24,Month="3"),
   data.frame(Abr24,Month="4"),
@@ -159,14 +177,18 @@ census2022 # An example of a census merged along the year
 #----------------------------------------------------
 
 Census_all<-rbind(
+  cbind(census2025,year="2025"),
   cbind(census2024,year="2024"),
   cbind(census2023,year="2023"),
   cbind(census2022,year="2022"))%>%
-  pivot_longer(Imaturos:Reprodutivos,names_to="stage")
+  pivot_longer(Imaturos:Reprodutivos,names_to="stage")%>%
+  filter(!((Plot %in% c(8,9)) & year == 2025)) ##Remove censuses in plot 8 and 9 because it was not correctly sampled
+
 
 
 #### Maximum number of individuals
 Census_all_max<-rbind(
+  cbind(census2025,year="2025"),
   cbind(census2024,year="2024"),
   cbind(census2023,year="2023"),
   cbind(census2022,year="2022"))%>%
@@ -177,9 +199,11 @@ Census_all_max<-rbind(
   pivot_longer(MaxIm:MaxTot,names_to="stage")
 
 
-Census_all #View
+#Remove censuses in plot 8 and 9 because it was not correctly sampled
+Census_all_max<-Census_all_max %>% filter(!((Plot %in% c(8,9)) & year == 2025)) 
+#Census_all #View
 
-Census_all_max  #View
+#Census_all_max  #View
 ```
 
 ### 2.3. Pairing censuses to estimate recruitment
@@ -227,6 +251,22 @@ RepTot # Exemplo de resultado
 ### 2.4. Transform censuses in timeseries to estimate survival
 
 ```{r}
+
+## 2025
+Census2025_ts<-census2025%>%arrange(Site,Plot,Month)%>%
+    filter(!(Plot %in% c(8,9)))%>% #Remove censuses from plot 8 and 9
+select(Plot,Month,Imaturos,Reprodutivos)%>%
+pivot_longer(c(Imaturos,Reprodutivos),names_to="Stage",values_to="Indv")%>%
+pivot_wider(names_from=Month,values_from="Indv")%>%
+arrange(Plot)%>%
+mutate(Plot_tag=paste0("Plot_",Plot))%>%
+select(-c(Stage,Plot))%>%
+ group_split(Plot_tag, .keep = TRUE) %>%
+  `names<-`({.} %>% map(~ .x$Plot_tag[1]) %>% unlist()) %>%
+  ## If you want to discard the grouping variable, do the following step as well
+  map(~ .x %>% select(-Plot_tag))
+
+
 ## 2024
 Census2024_ts<-census2024%>%arrange(Site,Plot,Month)%>%
 select(Plot,Month,Imaturos,Reprodutivos)%>%
@@ -278,13 +318,15 @@ select(-c(Stage,Plot))%>%
 names(Census2022_ts)<-paste0(names(Census2022_ts),"_2022")
 names(Census2023_ts)<-paste0(names(Census2023_ts),"_2023")
 names(Census2024_ts)<-paste0(names(Census2024_ts),"_2024")
+names(Census2025_ts)<-paste0(names(Census2025_ts),"_2025")
 
 
 # Merge all timeseries
 all_census_ts<-as.list(c(
 		Census2022_ts,
 		Census2023_ts,
-		Census2024_ts))
+		Census2024_ts,
+		Census2025_ts))
 
 
 # Check
@@ -302,6 +344,7 @@ all_census_df
 
 Describe proportion of individuals in each stage along the year.
 
+<!-- remember, these are proportions juveniles/adult, so they should have similar SD -->
 ```{r}
 all_census_df %>%
   pivot_longer(cols = c(Mar, Apr, May), names_to = "Month", values_to = "Count") %>%
@@ -356,6 +399,10 @@ dredge(pois_RepIm)
 -->
 ```
 
+<!-- # Site is no longer included in the best model for reproduction but it is still significantly differently
+
+# NEED TO UPDATE IN THE CODE BELOW
+--> 
 ```{r message=FALSE, warning=FALSE, cache=TRUE}
 nb_RepIm<-glmmTMB::glmmTMB(t1~0+t0*Site+(1|period),
                            family=nbinom2(link = "log"),data=RepIm)
@@ -547,6 +594,9 @@ mpm_list[1]
 -   Plot_15_2024 was below a extinction threshold, so, it is necessary to be included in the analyses.
 -   Plot_19_2022 we cannot decided if it is a sampling error or a biological process so it was removed
 
+
+<!--# 2025 is exticted in 2024, so, I suspect it is better to remove, Anyway, it gives problem also --> 
+
 ```{r}
 # Detect plots with problems
 problems_plots<-mpm_list_bkp[lapply(lapply(mpm_list_bkp,complete.cases),any,FALSE)=="FALSE"]
@@ -560,15 +610,16 @@ zero_mpm<-list()
 zero_mpm[[1]]<-matrix(rep(0,4),2)
 
 mpm_list_bkp[names(mpm_list_bkp) %in% names(problems_plots)]
-mpm_list_bkp[names(mpm_list_bkp) == "Plot_15_2024"]<-zero_mpm  #Include zero matrices in the list of estiamted matrices
+mpm_list_bkp[names(mpm_list_bkp) %in% c("Plot_15_2024","Plot_15_2025")]<-zero_mpm  #Include zero matrices in the list of estiamted matrices
 mpm_list_bkp[names(mpm_list_bkp) %in% names(problems_plots)]
 
 
 #Census2022_ts$Plot_15_2022 #Show trajectory of the abundance
 #Census2023_ts$Plot_15_2023
 #Census2024_ts$Plot_15_2024
+#Census2024_ts$Plot_15_2025
 
-# Now make mpm_list being equal to mpm_list_bkp
+# remove Plot 19 2022 because we do not know if it was estimated correctly
 mpm_list <- mpm_list_bkp[!names(mpm_list)=="Plot_19_2022"]
 ```
 
@@ -608,17 +659,6 @@ VRs_dif_df%>%
 
 
 # 7. Producing finam matrix models
-
-## 7.1 Remove senescent individuals for further analyses
-
-```{r}
-
-mpm_list_s22<-mpm_list #Creates a new MPM list including S22
-mpm_list<-Map(function(mat) { mat[2,2] <- 0; mat }, mpm_list) #Remove S22 for further analyses
-
-mpm_list[[1]]
-mpm_list_s22[[1]]
-```
 
 ## 7.2. Merging recruitment with survival dependent vital rates
 
@@ -778,7 +818,7 @@ mutate(stages=case_when(vital_rate=="S1"~ "Stasis[Immat]",
 				vital_rate=="R"~ "Recruitment",
 				vital_rate=="S4"~ "Surv[Adult]"))%>%
 mutate(stages=forcats::fct_relevel(stages, c("Statis[Immat]","Growth[Immat.>Adult]", "Surv[Adult]","Recruitment")))%>%
-filter(vital_rate!="R")%>%
+filter(!(vital_rate %in% c("R","S4")))%>%
 ggplot(.,aes(y=Mean,x=stages,group=year))+
 geom_pointrange(aes(ymin=Mean-SE,ymax=Mean+SE,color=Site,shape=year),alpha=0.8,
 	position = position_dodge2(width = 0.4))+
@@ -822,7 +862,7 @@ lambsPlot<-lambsSite_df%>%
 mutate(VAR="PopGrowthRate")%>%
 ggplot(.,aes(y=Mean,x=VAR,group=year))+
 geom_hline(yintercept=1,col="red", linetype="longdash")+
-geom_pointrange(aes(ymin=lower95,ymax=higher95,color=Site,shape=year),alpha=0.8,
+geom_pointrange(aes(ymin=Mean-SE,ymax=Mean+SE,color=Site,shape=year),alpha=0.8,
 	position = position_dodge2(width = 0.7))+
 #  geom_line(aes(color = Site, group = Site), 
 #            position = position_dodge2(width = 0.7))+
@@ -876,7 +916,12 @@ mean(mpm_list_recruit_S11C[grep("2023$", names(mpm_list_recruit_S11C), value = T
 #2024
 LTRE(
 mean(mpm_list_recruit_S11B[grep("2024$", names(mpm_list_recruit_S11B), value = TRUE)]),
-mean(mpm_list_recruit_S11C[grep("2024$", names(mpm_list_recruit_S11C), value = TRUE)]))
+mean(mpm_list_recruit_S11C[grep("2024$", names(mpm_list_recruit_S11C), value = TRUE)])),
+
+#2025
+LTRE(
+mean(mpm_list_recruit_S11B[grep("2025$", names(mpm_list_recruit_S11B), value = TRUE)]),
+mean(mpm_list_recruit_S11C[grep("2025$", names(mpm_list_recruit_S11C), value = TRUE)]))
 )
 
 #Mean
@@ -1000,14 +1045,28 @@ StochA <- lapply(seq(dim(StochA_sim)[3]), function(i) StochA_sim[,,i])
 
 StochA[[1]]
 
-
-# Mean lambda
-lapply(StochA,lambda)%>%unlist%>%mean
+```
 
 
-# Lambda range
-lapply(StochA,lambda)%>%unlist%>%range
 
+```{r}
+data.frame(
+  rbind(
+    c(
+    lapply(StochA,lambda)%>%unlist%>%mean,
+    lapply(mpm_list_recruit_full,lambda)%>%unlist%>%mean),
+    c(
+    lapply(StochA,lambda)%>%unlist%>%sd,
+    lapply(mpm_list_recruit_full,lambda)%>%unlist%>%sd)
+    ),
+  row.names=c("Mean_lambda","sd_lambda"))%>%
+  setNames(c("Simulated","Observed"))
+```
+
+```{r}
+rbind(
+lapply(StochA,lambda)%>%unlist%>%range,
+lapply(mpm_list_recruit_full,lambda)%>%unlist%>%range)
 ```
 
 ### 9.3.2. Check values
@@ -1083,15 +1142,25 @@ projS11C_10<-stoch.projection(mpm_list_recruit_S11C,
                               n_init,tmax=10,nreps=1000)
 
 projS11C_30<-stoch.projection(mpm_list_recruit_S11C, 
-                              n_init,tmax=10,nreps=1000)
-
-
+                              n_init,tmax=30,nreps=1000)
 
 projALL_10<-stoch.projection(c(mpm_list_recruit_S11B,mpm_list_recruit_S11C),
                              n_init,tmax=10,nreps=1000)
 
 projALL_30<-stoch.projection(c(mpm_list_recruit_S11B,mpm_list_recruit_S11C),
-                             n_init,tmax=10,nreps=1000)
+                             n_init,tmax=30,nreps=1000)
+```
+
+
+
+```{r}
+
+data.frame(rbind(
+  proptable_modif(projALL_10, n_threshold),
+  proptable_modif(projALL_30, n_threshold)),
+  row.names = c("10 years", "30 years"))%>%setNames(c("Extincted","Persistent"))%>%
+  print()
+
 ```
 
 ```{r}
@@ -1119,13 +1188,13 @@ apply(projS11B_30,1,sum)%>%range()
 data.frame(rbind(
   proptable_modif(projS11B_10, n_threshold),
   proptable_modif(projS11C_10, n_threshold)),
-  row.names = c("S11B", "S11C"))%>%
+  row.names = c("S11B", "S11C"))%>%setNames(c("Extincted","Persistent"))%>%
   print()%>%chisq.test()
 
 data.frame(rbind(
   proptable_modif(projS11B_30, n_threshold),
   proptable_modif(projS11C_30, n_threshold)),
-  row.names = c("S11B", "S11C"))%>%
+  row.names = c("S11B", "S11C"))%>%setNames(c("Extincted","Persistent"))%>%
   print()%>%chisq.test()
 ```
 
@@ -1207,11 +1276,11 @@ out<-NULL
 
 tmax=11   #Years simulated (from t0 to t10)
 for(i in 1:length(sim_damage)){
-  temp<-Myviab_func(StochA, 
+  temp<-Myviab_func(mpm_list_recruit_full, 
                     n0 = Mean_indiv$Median[1:2], 
                     Nx=Mean_indiv[3,3]/10,        #Mean_indiv[3,3]/10 representa 10% dos indivíduos médios
                     maxruns=10,                   # Número de réplicas em cada simulação?
-                    tmax = tmax, nreps=1000,
+                    tmax = tmax, nreps=100,
                     damage=sim_damage[i])
   out[[i]]<-data.frame(Extinct.rate=apply(temp,1,mean),
                        SD=apply(temp,1,sd),
@@ -1226,8 +1295,8 @@ Calculate the number of simulations crossing the extinction threshold to extimat
 ```{r}
 viab_para<-do.call(rbind,out)%>%
   mutate(Persistprop=100-(Extinct.rate*100),
-         ymin=100-((Persistprop-SD)*100),
-         ymax=100-((Persistprop+SD)*100))
+         ymin=100-((Extinct.rate-SD)*100),
+         ymax=100-((Extinct.rate+SD)*100))
   
   viab_para[viab_para>100]<-100
 viab_para[viab_para<0]<-0
