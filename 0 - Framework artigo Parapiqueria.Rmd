@@ -378,7 +378,7 @@ options(na.action=na.fail) #Necessary for correct use of MuMIn
 
 ## 3.2. Estimating recruitment based on the maximum reproductive individuals
 
-Assessing if the maximum number of immature individuals in $t_1$ can be predicted by the maximum number of of reproductive in the year before $t_0$
+Assessing if the maximum number of total individuals in $t_1$ can be predicted by the maximum number of of reproductive in the year before $t_0$ <!--# Previous analyses comparing if the model better predicts total individuals or number of immature. Total immature has a slightly better AIC than total individuals but its rationale is not straightforward. Moreover, simulation show lower lambdas which is unlikely-->
 
 Negative binomial has the best fit
 
@@ -404,23 +404,23 @@ dredge(pois_RepIm)
 # NEED TO UPDATE IN THE CODE BELOW
 --> 
 ```{r message=FALSE, warning=FALSE, cache=TRUE}
-nb_RepIm<-glmmTMB::glmmTMB(t1~0+t0*Site+(1|period),
-                           family=nbinom2(link = "log"),data=RepIm)
+nb_RepTot<-glmmTMB::glmmTMB(t1~0+t0*Site+(1|period),
+                           family=nbinom2(link = "log"),data=RepTot)
 
 
-nb_RepIm_ls<-dredge(nb_RepIm)%>%get.models(subset=NA)
+nb_RepTot_ls<-dredge(nb_RepTot)%>%get.models(subset=NA)
 
-nb_RepIm_df<-data.frame(
-  formula=format(cbind(lapply(nb_RepIm_ls,formula))),
+nb_RepTot_df<-data.frame(
+  formula=format(cbind(lapply(nb_RepTot_ls,formula))),
   Var="Rep>Tot",Dist="Neg.Bin",
-  AICcmodavg::aictab(nb_RepIm_ls))
+  AICcmodavg::aictab(nb_RepTot_ls))
 
-nb_RepIm_df
+nb_RepTot_df
 ```
 
 ```{r message=FALSE, warning=FALSE}
 # Best model is t1~0+t0+Site+(1|census) Negative binomial
-BestModel<-update(nb_RepIm,t1~0+t0+Site+(1|period))
+BestModel<-update(nb_RepTot,t1~0+t0+Site+(1|period))
 BestModel%>%parameters::parameters(.,exponentiate =F)
 ```
 
@@ -588,7 +588,7 @@ mpm_list[1]
 -   Plots are:
 -   Plot_19_2022 - Only adult individuals recorded?
 -   Plot_15_2024 - Only 2 individuals in March
-
+-   Plot_15_2025 - Removed because it was already exctincted a year before
 ##### Decisions
 
 -   Plot_15_2024 was below a extinction threshold, so, it is necessary to be included in the analyses.
@@ -619,8 +619,10 @@ mpm_list_bkp[names(mpm_list_bkp) %in% names(problems_plots)]
 #Census2024_ts$Plot_15_2024
 #Census2024_ts$Plot_15_2025
 
+# Remove plot 15 2025 as it was already extincted
+
 # remove Plot 19 2022 because we do not know if it was estimated correctly
-mpm_list <- mpm_list_bkp[!names(mpm_list)=="Plot_19_2022"]
+mpm_list <- mpm_list_bkp[!(names(mpm_list)%in%c("Plot_19_2022","Plot_15_2025"))]
 ```
 
 # 6. Quadratic programming efficiency
@@ -634,11 +636,11 @@ mpm_list <- mpm_list_bkp[!names(mpm_list)=="Plot_19_2022"]
             -   Senescent adults were kept in the matrix, as it helps to estimate demographic parameters, but must be removed during elasticity analyses
 
 ```{r include=FALSE, echo=TRUE}
-file.edit("ModelToyv1.R") 
-source("ModelToyv1.R")
+#file.edit("ModelToyv1.R") 
+#source("ModelToyv1.R")
 ```
 
-```{r fig.height=5, fig.width=14}
+#```{r fig.height=5, fig.width=14}
 #the object VRs_dif_df was created in "ModelToyv1.R"
 VRs_dif_df%>%
   filter(matrix=="A2")%>%
@@ -654,7 +656,7 @@ VRs_dif_df%>%
   scale_x_discrete(labels=function(l) parse(text=l))+
   theme_minimal(base_size=24)+
   facet_wrap(.~stages,scales="free",ncol=3)
-```
+#```
 
 
 
@@ -1113,11 +1115,11 @@ hist(unlist(lapply(mpm_list_recruit_S11C, lambda)),
 ## 9.4. Extinction growth rate
 
 ```{r}
-resultado<-stoch.quasi.ext(StochA, 
+resultado<-stoch.quasi.ext(c(mpm_list_recruit_S11B,mpm_list_recruit_S11C), 
               n0 = Mean_indiv$Median[1:2], 
               Nx=Mean_indiv[3,3]/10,
               maxruns=10,
-              tmax = 10, nreps=100)
+              tmax = 10, nreps=1000)
 matplot(resultado, xlab="Years", ylab="Cumulative extinction risk (%)", 
         type='l', lty=1, col="grey20", las=1,
         main="Extinction risk \n (Proportion of simulations crossing extinction threshold of 10% initial population")
@@ -1279,7 +1281,7 @@ for(i in 1:length(sim_damage)){
   temp<-Myviab_func(mpm_list_recruit_full, 
                     n0 = Mean_indiv$Median[1:2], 
                     Nx=Mean_indiv[3,3]/10,        #Mean_indiv[3,3]/10 representa 10% dos indivíduos médios
-                    maxruns=10,                   # Número de réplicas em cada simulação?
+                    maxruns=100,                   # Número de réplicas em cada simulação?
                     tmax = tmax, nreps=100,
                     damage=sim_damage[i])
   out[[i]]<-data.frame(Extinct.rate=apply(temp,1,mean),
