@@ -1,34 +1,35 @@
 ---
-title: "Framework - Artigo Parapiqueria"
+title: "Framework_Artigo Parapiqueria"
 author:
-  name: Gabriel Santos 
-date: 
-params: 
-  update_dat:  !r paste(format(Sys.time(), '%Y-%m-%d (%H:%M:%S)'))
-  orig_dat: "05/08/2024"
+  name: Gabriel Santos
 output: 
-  html_document: 
+  html_document:
+    self_contained: true
+    cache: false
+    df_print: paged
     theme: paper
     code_folding: show
     toc: true
     toc_float:
       collapsed: true
-    cache: true
     number_sections: false
-editor_options: 
-  markdown: 
+params:
+  update_dat: !r paste(format(Sys.time(), '%Y-%m-%d (%H:%M:%S)'))
+  orig_dat: 05/08/2024
+editor_options:
+  markdown:
     wrap: 72
 ---
 
-**Criado em**: `r params$orig_dat`
+**Created in**: `r params$orig_dat`
 
-**Atualizado:** `r params$update_dat`
+**Updated in:** `r params$update_dat`
 
 <!-- Setup -->
 
 ```{css, echo=FALSE}
 .scroll {
-  max-height: 600px;
+  max-height: 500px;
   overflow-y: auto;
   background-color: inherit;
 }
@@ -84,6 +85,38 @@ library(broom)
 
 set.seed(1)
 sessionInfo()
+
+```
+
+An ancillary function to optimise statistical report
+
+```{r, label="statrep function"}
+statrep <- function(data, group_vars, value_var = "value", round = NULL) {
+  data_summary <- data %>%
+    group_by(across(all_of(group_vars))) %>%
+    summarise(
+      Mean = mean(.data[[value_var]], na.rm = TRUE),
+      SD = sd(.data[[value_var]], na.rm = TRUE),
+      N = n(),
+      SE = SD / sqrt(N),
+      CI = 1.96 * SE,
+      lower95 = quantile(.data[[value_var]], 0.025, na.rm = TRUE),
+      higher95 = quantile(.data[[value_var]], 0.975, na.rm = TRUE),
+      .groups = "drop"
+    )
+    # Define if values should be rounded
+  if (is.null(round)) {
+    round_val <- 3
+  } else if (identical(round, FALSE)) {
+    return(data_summary)  # Não arredonda, retorna direto
+  } else {
+    round_val <- round
+  }
+  
+  # if round is informed, round it accordingly
+  data_summary %>%
+    mutate(across(where(is.numeric), ~round(.x, round_val)))
+}
 
 ```
 
@@ -208,7 +241,70 @@ Census_all_max<-Census_all_max %>% filter(!((Plot == 15) & year == 2025))
 #Census_all_max  #View
 ```
 
-### 2.3. Pairing censuses to estimate recruitment
+### 2.2.1 Population size between plots and streams
+
+```{r}
+filter(Census_all_max,value>0)$value%>%range()
+
+Census_all_max%>%
+statrep(., group_vars = NULL,value_var = "value")
+```
+
+```{r}
+# Mean  individuals by stream
+Census_all_max%>%
+statrep(., group_vars = c("Site"),value_var = "value")
+
+# Mean  individuals by year
+Census_all_max%>%
+statrep(., group_vars = c("year"),value_var = "value")
+
+
+# Mean  individuals by stage
+Census_all_max%>%
+statrep(., group_vars = c("stage"),value_var = "value")
+
+
+# Mean  individuals by stream, year, stage
+Census_all_max%>%
+statrep(., group_vars = c("Site","year","stage"),value_var = "value")
+```
+
+#### Testing if there is differences between streams
+
+Check theoretical distribution better describe abundance in plots and years: poisson or negatibe binomial.
+
+```{r}
+Census_all_max%>%
+mutate(year=as.numeric(year))%>%
+nest(data = -stage)%>%
+ mutate(
+    AICnb = map(data, ~ AIC(MASS::glm.nb(value ~ year*Site, data = .))),
+    AICpois = map(data, ~ AIC(glm(value ~ year*Site, family=poisson(),data = .)))
+    )%>%
+  unnest(AICnb,AICpois)%>%select(-data)
+
+```
+
+Census_all_max
+
+```{r}
+Census_all_max%>%
+#  filter(!c(year%in%c("2025")))%>%
+mutate(year=as.numeric(year))%>%
+nest(data = -stage)%>%
+ mutate(
+    fit = map(data, ~ MASS::glm.nb(value ~ year*Site, data = .)),
+    tidy_fit = map(fit, ~ tidy(.) %>% mutate(across(c(estimate, p.value), ~ round(., 3))))
+  ) %>%
+  unnest(tidy_fit)%>%
+group_by(stage)%>%
+select(-c(fit,data))%>%
+group_split()
+
+```
+
+## 2.3. Pairing censuses to estimate recruitment
 
 ```{r message=FALSE, warning=FALSE}
 Timelags_base<-Census_all_max %>%
@@ -251,7 +347,7 @@ RepTot
 
 ```
 
-### 2.4. Transform censuses in time series to estimate survival
+## 2.4. Transform censuses in time series to estimate survival
 
 ```{r}
 
@@ -368,91 +464,114 @@ mutate(Month = factor(Month, levels = c("Mar", "Apr", "May")))%>%arrange(Month)
 
 # 4. Inverse model implementation
 
-## 4.1. Creates an working example[^1]
+## 4.1. Define the Parapiqueria life-cycle in a matrix format
 
-So, let's consider the following MPM:
+Assuming the life cycle as:
+
+```{R echo=FALSE}
+library(DiagrammeR)
+
+grViz("
+digraph lifecycle {
+  graph [rankdir=LR, splines=true]
+
+  node [shape = circle, fontsize=12]
+  
+  J [label = 'Immat.']
+  A [label = 'Adult']
+
+  # Recrutamento (curvado para cima)
+  A -> J [label = 'R', constraint=false, minlen=2, labeldistance=2, labelangle=95]
+
+  # Sobrevivência juvenil
+  J -> J [label = <S<sub>1,1</sub>>, color = 'grey']
+
+  # Transição para adulto
+  J -> A [label = <S<sub>1,2</sub>>, color = 'grey']
+}
+")
+
+```
+
+The resulting matrix is - 2x2 - Divided in juveniles and adults - Does not includes recruitment because it cannot be estimated within year (March-May)
 
 $$
 A=
 \begin{bmatrix}
 S_{1,1} & R_{1,2} \\
-S_{2,1} & S_{2,2} \\
-\end{bmatrix}
-
-\\
-
-\text{where,} ~~ A=U+F
-
-\\
-
-U=
-
-\begin{bmatrix}
-S_{1,1} & 0 \\
-S_{2,1} & S_{2,2} \\
-\end{bmatrix}
-
-~~ \text{and} ~~ F=
-
-\begin{bmatrix}
-0 & R_{1,2} \\
-0 & 0 \\
+S_{2,1} & 0 \\
 \end{bmatrix}
 $$
 
+where $A=U+F$
+
+$$
+U = 
+\left(\begin{array}{ccc}  
+S_{1,1} & 0 \\
+S_{2,1} & 0 \\
+\end{array}\right)
+~~~~~\text{and}~~~~~~~
+F = \left(\begin{array}{ccc}  
+0 & R_{1,2} \\
+0 & 0 \\
+\end{array}\right)
+$$
 
 The respective MPM represents the individuals transition during the period Mar-May, represented by $U$
 
-Non-zero elements in matrix $U$ are $S_{1,1}, S_{2,1}, \tex{end}, S_{2,2}$.
+Non-zero elements in matrix $U$ are $S_{1,1}$ and $S_{2,1}$.
 
-Now, we creates an hypothetical matrix and the non-zero elements
+Once our matrix is defined, we creates an hypothetical matrix to help determine the necessary components to run the `QPmat` function
 
 ```{r, label="creates an hipothetical matrix"}
 AA <- matrix(c(1,1,0,0),ncol=2)
 AA
-
-nonzero<-which(AA> 0); nonzero
-
-
 ```
 
-To run the `QPmat` function, we need to inform: 
+To run the `QPmat` function, we need to inform:
 
-- Demographic restrictions, represented by matrix $C$; 
-- Non-zero elements already informed; 
-- All vital rates have same weight $b$ element.
+-   Demographic restrictions, represented by matrix $C$;
+-   Non-zero elements already informed;
+-   All vital rates have same weight $b$ element.
 
 Matrix C is described as:
 
 $$
 C = 
 \left(\begin{array}{ccc}  
-  -1 & 0 & 0  \\          
-  0 & -1 & 0  \\   
-  0 & 0 & -1  \\   
-  1 & 0 & 1  \\   
-  0 & 1 & 0   \\ 
+  -1 & 0  \\          
+  0 & -1   \\   
+  1 & 1   \\   
 \end{array}\right)
 ~~~~~~~~ \text{representing,} ~~~~~  
 \begin{array}{c}
-  \ S_{1,1} ≤ 0 \\
-  \ S_{2,1} ≤ 0\\
-  \ S_{2,2} ≤ 0 \\
+  \ S_{1,1} ≥ 0 \\
+  \ S_{2,1} ≥ 0\\
   \ S_{1,1} + S_{2,1} ≤ 1 \\
-  \ S_{2,2} ≤ 1 \\
 \end{array}
-$$ 
+$$
+
+$S_{1,1} ≥ 0$ and $S_{1,1} ≥ 0$ means that components of the $U$ matrix cannot lower than 0. Also, the transition of juveniles to adults and stasis $S_{1,1} + S_{2,1} ≤ 1$ cannot be greater than 1.
 
 To construct the C matrix in R, we do,
 
 ```{r}
 C<- rbind(
-  c(-1,  0),  # -a11 ≤ 0
-  c( 0, -1),  # -a21 ≤ 0
+  c(-1,  0),  # -a11 ≥ 0
+  c( 0, -1),  # -a21 ≥ 0
   c( 1,  1)   # a11 + a21 ≤ 1
 )
+```
 
-b <- c(0, 0, 1) # Creates the weight of each vital rate
+Define the non-zero elements
+
+```{r}
+nonzero<-which(AA> 0); nonzero
+```
+
+```{r}
+b <- apply(C, 1, max)
 ```
 
 # 5. Applying the quadratic programming
@@ -479,14 +598,15 @@ U_list[50]
 
 -   Plots are:
 
-  -   Plot_19_2022 - Only adult individuals recorded?
-  
-  -   Plot_15_2024 - Only 2 individuals in March
-  
+    -   Plot_19_2022 - Only adult individuals recorded
+
+    -   Plot_15_2024 - Only 2 individuals in March
+
 ##### Decisions
+
 -   Plot_15_2024 was below a extinction threshold, so, it is necessary to be included in the analyses.
 
-    -   Plot_15_2025 - Removed because it was already exctincted a year before 
+    -   Plot_15_2025 - Removed because it was already extinct a year before
 
 -   Plot_19_2022 we cannot decided if it is a sampling error or a biological process so it was removed
 
@@ -521,12 +641,7 @@ U_list <- U_list_bkp[!(names(U_list)%in%c("Plot_19_2022","Plot_15_2025"))]
 # 6. Quadratic programming efficiency
 
 -   Simulate an hypothetical population to assess model's accuracy
--   Hypothetical population was created based on the matrix structure we expect for *Parapiqueria*. - Matrix is
-    -   2x2
-    -   Divided in juveniles and adults
-    -   Does not includes recruitment because it cannot be estimated within year (March-May)
-    -   We assume adults reproduce once and become senescent. So, stage $S_{2,2}$ represents senescent adults and cannot contribute to population growth rate. Two tests with and without the model were performed for efficiency;
-        -   Senescent adults were kept in the matrix, as it helps to estimate demographic parameters, but must be removed during elasticity analyses
+-   Hypothetical population was created based on the matrix structure we expect for *Parapiqueria*.
 
 ```{r include=FALSE, echo=TRUE}
 #file.edit("ModelToyv1.R") 
@@ -537,10 +652,9 @@ U_list <- U_list_bkp[!(names(U_list)%in%c("Plot_19_2022","Plot_15_2025"))]
 
 # 7. Producing final matrix models
 
-
 ## 7.1 Transform observed recruitment in F matrices
 
-```{r}
+```{r message=FALSE, warning=FALSE}
 Recruit_asmx<- RepTot %>%
   mutate(id = paste0("Plot_", Plot, "_", year)) %>%  # Produce a list of plots_year similar to U_list
   mutate(
@@ -563,12 +677,13 @@ F_list <- Recruit_asmx %>%
 F_list[[1]]
 ```
 
-
 ## 7.2. Merging F matrices and U matrices
 
+```{=html}
 <!-- note that i cannot estimat recruitment from 2025 at the moment as 2026 year is lacking information.
 So, only MPM from 2022-2024 were produced. So, F_list and U_list are better objects to estimate effect along the year in vital rates meanwhile mpm_list is the correct object to estimate lambda and make the simulations.
 -->
+```
 
 ```{r}
 # Align the matrices to make sure F is defined for the correct plot
@@ -587,17 +702,13 @@ mpm_list <-Map(`+`, U_list_aligned, F_list_aligned)
 
 ```
 
-
-
-
 ### 7.3. Separe MPMs by streams
 
-Split plots according to the streams. 
+Split plots according to the streams.
 
-- Plots 1-10 are placed in the S11C; 
+-   Plots 1-10 are placed in the S11C;
 
-- Plots 11-20 are placed in the S11B;
-
+-   Plots 11-20 are placed in the S11B;
 
 ```{r}
 mpm_list_S11C<-mpm_list[grep("^Plot_([1-9]|10)_.*$", names(mpm_list))]
@@ -605,29 +716,7 @@ mpm_list_S11B<-mpm_list[grep("^Plot_(1[1-9]|20)_.*$", names(mpm_list))]
 
 ```
 
-
-
 # 8. Summary results
-
-An ancillary function to optimise statistical report
-
-```{r}
-statrep<- function(data, group_vars, value_var = "value") {
-  data %>%
-    group_by(across(all_of(group_vars))) %>%
-    summarise(
-      Mean = mean(.data[[value_var]], na.rm = TRUE),
-      SD = sd(.data[[value_var]], na.rm = TRUE),
-      N = n(),
-      SE = SD / sqrt(N),
-      CI = 1.96 * SE,
-      lower95 = quantile(.data[[value_var]], 0.025, na.rm = TRUE),
-      higher95 = quantile(.data[[value_var]], 0.975, na.rm = TRUE),
-      .groups = "drop"
-    ) %>%
-    mutate(across(where(is.numeric), round, 2))
-}
-```
 
 Transform vital rates into a data.frame to proceed with statistical analyses
 
@@ -668,34 +757,39 @@ filter(vital_rate!=c("S4"))%>%
     group_by(Site)%>% group_split()
 ```
 
+```{r}
+vr.df%>%
+filter(vital_rate=="R")%>%
+  statrep(., group_vars = c("year", "Site"),value_var = "value")%>%
+    group_by(Site)
+```
+
 ### 8.2.1. Checking if there is differences between plots
 
 ```{r}
-vr.df%>%
-  filter(vital_rate!="S4")%>%   
-  filter(complete.cases(.))%>%       # Recruitment in  plot_15_2024 could not be extimeted as this plot reached exticntion in 2024. 
-  select(-c(year,VR))%>%
-  nest(data=c(Plot,Site,value))%>%
-  mutate(pairwise= map(data, ~ t.test(value ~ Site, data = .)))%>%
-  pull(pairwise)%>%
-  purrr::set_names(c("Stasis[Immat]", "Growth[Immat.>Adult]", "Recruitment"))%>%
-  tibble(
-    Comparison = names(.),
-    t_value = map_dbl(., ~ .x$statistic),
-    df = map_dbl(., ~ .x$parameter),
-    p_value = map_dbl(., ~ .x$p.value),
-    conf_low = map_dbl(., ~ .x$conf.int[1]),
-    conf_high = map_dbl(., ~ .x$conf.int[2]),
-    mean_S11B = map_dbl(., ~ .x$estimate[1]),
-    mean_S11C = map_dbl(., ~ .x$estimate[2])
-  )
 
+#Stasis
+vr.df%>%
+filter(vital_rate=="S1")%>%
+  aov(value~Site*year,data=.)%>%
+  anova()
+
+#Growth
+vr.df%>%
+filter(vital_rate=="S2")%>%
+  aov(value~Site*year,data=.)%>%
+  anova()
+
+#Recruitment
+vr.df%>%
+filter(vital_rate=="R")%>%
+  aov(value~Site*year,data=.)%>%
+  anova()
 ```
 
 ### 7.2.2. Checking if vital rates are correlated to year
 
 ```{r}
-# Similar to above. Main difference is in the nest process
 vr.df%>%
   filter(vital_rate!="S4")%>%   
   filter(complete.cases(.))%>%       # Recruitment in  plot_15_2024 could not be extimeted as this plot reached exticntion in 2024. 
@@ -725,10 +819,11 @@ vr.df%>%
                           vital_rate=="S2"~ "Growth[Immat.>Adult]",
                           vital_rate=="R"~ "Recruitment",
                           vital_rate=="S4"~ "Surv[Adult]"))%>%
-  mutate(stages=forcats::fct_relevel(stages, c("Statis[Immat]","Growth[Immat.>Adult]", "Surv[Adult]","Recruitment")))%>%
+  mutate(stages=forcats::fct_relevel(stages, c("Stasis[Immat]","Growth[Immat.>Adult]", "Surv[Adult]","Recruitment")))%>%
   filter(!(vital_rate %in% c("S4")))%>%
+  filter(!c(vital_rate=="R" & year==2025))%>%
   ungroup()%>%
-  ggplot(.,aes(y=Mean,x=stages,group=year))+
+  ggplot(.,aes(y=Mean,x=year,group=Site))+
   geom_pointrange(aes(ymin=Mean-SE,ymax=Mean+SE,color=Site,shape=year),alpha=0.8,
                   position = position_dodge2(width = 0.4))+
 #  scale_x_discrete(labels=function(l) parse(text=l))+
@@ -736,7 +831,7 @@ vr.df%>%
   scale_color_manual(values=c("#ff9211","#6e86e7"))+
   theme_bw(base_size=24)+
   theme(legend.position="bottom")+
-  facet_wrap(.~VR,scales="free")+
+  facet_wrap(.~stages,scales="free")+
   xlab(NULL)+ylab(NULL)
 ```
 
@@ -756,7 +851,10 @@ range(lamb_df$Lambda)
 t.test(Lambda~Site,data=lamb_df)
 
 
-lamb_df%>%statrep(., group_vars = c("Site","Year"),value_var = "Lambda")
+
+lamb_df%>%statrep(., group_vars = c("Site"),value_var = "Lambda")
+
+lamb_df%>%statrep(., group_vars = c("Year","Site"),value_var = "Lambda")
 
 
 ```
@@ -787,7 +885,8 @@ lamb_df%>%
 ```{r, result="asis"}
 
 #Elasticities 
-elasticity(mean(mpm_list))
+elas<-elasticity(mean(mpm_list))
+elas
 
 # Elasticities in Site S11B
 elasticity(mean(mpm_list_S11B))
@@ -799,43 +898,75 @@ elasticity(mean(mpm_list_S11C))
 ## 8.2. Life Table Response Experiment (LTRE)
 
 ```{r}
-LTRE(mean(mpm_list_S11B), mean(mpm_list_S11C))
+ltre_res<-LTRE(mean(mpm_list_S11B), mean(mpm_list_S11C))
+ltre_sd<-sqrt(var2(LTRE(mpm_list_S11B, mean(mpm_list_S11C))))
+
+```
+
+```{r}
+vr_perf<-data.frame(
+ LTRE= as.vector(ltre_res),
+ LTRE_sd= as.vector(ltre_sd),
+ Elasticities= as.vector(elas),
+  vr=c("S11","S21","R","S22"))
+
+
+
+vr_perf%>%
+  mutate(Elasticities=Elasticities*100)
+```
+
+```{r, fig.height=5, fig.width=12}
+vr_perf%>%pivot_longer(!c(vr, LTRE_sd),names_to="variable",values_to="values")%>%
+  filter(vr!="S22")%>%
+  ggplot(.,aes(x=vr,y=values))+
+  geom_col()+
+  facet_wrap(.~variable,scales="free")+
+  theme_minimal()
+  
 ```
 
 ## 8.2. Life table response by year
 
 ```{r}
 
-LTREyear<-list(
-  #2022
-LTRE(
-mean(mpm_list_S11B[grep("2022$", names(mpm_list_S11B), value = TRUE)]),
-mean(mpm_list_S11C[grep("2022$", names(mpm_list_S11C), value = TRUE)])),
+LTREyear_df<- data.frame(
+    rbind(
+    #2022
+        LTRE(
+          mean(mpm_list_S11B[grep("2022$", names(mpm_list_S11B), value = TRUE)]),
+          mean(mpm_list_S11C[grep("2022$", names(mpm_list_S11C), value = TRUE)]))%>%
+          as.vector(),
+    #2023
+        LTRE(
+          mean(mpm_list_S11B[grep("2023$", names(mpm_list_S11B), value = TRUE)]),
+          mean(mpm_list_S11C[grep("2023$", names(mpm_list_S11C), value = TRUE)]))%>%
+        as.vector(),
+    #2024
+        LTRE(
+          mean(mpm_list_S11B[grep("2024$", names(mpm_list_S11B), value = TRUE)]),
+          mean(mpm_list_S11C[grep("2024$", names(mpm_list_S11C), value = TRUE)]))%>%
+        as.vector())
+  )
 
-#2023
-LTRE(
-mean(mpm_list_S11B[grep("2023$", names(mpm_list_S11B), value = TRUE)]),
-mean(mpm_list_S11C[grep("2023$", names(mpm_list_S11C), value = TRUE)])),
 
-#2024
-LTRE(
-mean(mpm_list_S11B[grep("2024$", names(mpm_list_S11B), value = TRUE)]),
-mean(mpm_list_S11C[grep("2024$", names(mpm_list_S11C), value = TRUE)]))
-)
 
-#Mean
-LTREyear%>%mean()
-
-#Variance
-LTREyear%>%popbio::var2()
-
+LTREyear_df %>%
+  rowwise() %>%
+  mutate(
+    total = sum(abs(c_across(everything()))),
+    across(everything(), ~ abs(.x) / total)*100
+  ) %>%
+  select(-c(total,X4))%>%
+  cbind(Year=c("2022","2023","2024"),.)%>%
+    setNames(c("Year","S1","S2","R"))
 ```
 
 # 9. Extinction risk
 
 Three steps must be performed first:
 
-1.  Define the initial number of individuals based on the mean value of immatures and reproductives
+1.  Define the initial number of individuals based on the mean value of immature individuals and adult
 
 2 Simulate vital rates to include in the model
 
@@ -858,7 +989,6 @@ Mean_indiv
 
 ## 9.4. Extinction growth rate
 
-
 ```{r}
 #'-------------------------------------------------------------------------
 # Create proptable_modif a special prop table ------------------
@@ -878,12 +1008,15 @@ proptable_modif <- function(data, threshold) {
 
 ```
 
-
-
 ```{r}
+
+
+n_init<-Mean_indiv$Median[1:2] # define initial population
+n_threshold<-sum(n_init)*.10 # Define extinction threshold: 10% of the initial population size
+
 proj.pop<-stoch.quasi.ext(mpm_list, 
-              n0 = Mean_indiv$Median[1:2], 
-              Nx=Mean_indiv[3,3]/10,
+              n0 = n_init, 
+              Nx=n_threshold,
               maxruns=10,
               tmax = 10, nreps=1000)
 matplot(proj.pop, xlab="Years", ylab="Cumulative extinction risk (%)", 
@@ -893,30 +1026,21 @@ matplot(proj.pop, xlab="Years", ylab="Cumulative extinction risk (%)",
 ```
 
 ```{r}
-n_init<-c(50,50) # define initial population
-n_threshold<-sum(n_init)*.10 # Define extinction threshold: 10% of the initial population size
 
 #Project population for 10 years based on estimated parameters
 projS11B_10<-stoch.projection(mpm_list_S11B, 
-                              n_init,	#Estabelece meio indivíduo em cada estágio,logo, ao somar, teriamos quanto que a população doubrou,triplicou...
-                              #	stable.stage(mean(mpm_list_recruit_S11B))*100,
-                              tmax=10,nreps=1000)
-
-projS11B_30<-stoch.projection(mpm_list_S11B, 
-                              n_init,tmax=30,nreps=1000)
-
-#Project population for 30 years based on estimated parameters
+                              n_init,	
+                              tmax=10,nreps=10000)
 projS11C_10<-stoch.projection(mpm_list_S11C, 
-                              n_init,tmax=10,nreps=1000)
+                              n_init,tmax=10,nreps=10000)
 
-projS11C_30<-stoch.projection(mpm_list_S11C, 
-                              n_init,tmax=30,nreps=1000)
 
+# Project with all matrices together 
 projALL_10<-stoch.projection(mpm_list,
-                             n_init,tmax=10,nreps=1000)
+                             n_init,tmax=10,nreps=10000)
 
 projALL_30<-stoch.projection(mpm_list,
-                             n_init,tmax=30,nreps=1000)
+                             n_init,tmax=30,nreps=10000)
 ```
 
 ```{r}
@@ -930,56 +1054,14 @@ data.frame(rbind(
 ```
 
 ```{r}
-#'-------------------------------------------------------------------------
-# Create proptable_modif a special prop table ------------------
-#'-------------------------------------------------------------------------
-## Rationale  --------------
-# proptable_modif is an adaptation of default prop.table
-# This function allow to include FALSE or TRUE when there is no legitime true or false extinction 
-#'-------------------------------------------------------------------------
-proptable_modif <- function(data, threshold) {
-  # equivalent to prop.table(table(apply(data,1,sum)> n_threshold))*100
-  res <- table(factor(apply(data, 1, sum) > threshold, levels = c(FALSE, TRUE)))
-  # Equivalent to prop.table(ext10.probS11B)*100
-  prop <- prop.table(res) * 100
-  return(prop)
-}
-##'-------------------------------------------------------------------------
-
-apply(projS11C_30,1,sum)%>%range()
-apply(projS11B_30,1,sum)%>%range()
-
-
 # Chi-square of extinction rate between streams
 data.frame(rbind(
   proptable_modif(projS11B_10, n_threshold),
   proptable_modif(projS11C_10, n_threshold)),
   row.names = c("S11B", "S11C"))%>%setNames(c("Extincted","Persistent"))%>%
   print()%>%chisq.test()
-
-data.frame(rbind(
-  proptable_modif(projS11B_30, n_threshold),
-  proptable_modif(projS11C_30, n_threshold)),
-  row.names = c("S11B", "S11C"))%>%setNames(c("Extincted","Persistent"))%>%
-  print()%>%chisq.test()
 ```
 
-> Os resultados do nosso modelo indicam que **mesmo na ausência de impacto, há uma pequena probabilidade de extinção local das populações (0.11%) em quatro anos**, **aumentando para até 3.45% em 10 anos**. Esses resultados são coerentes com os censos observados em campo. Por exemplo, todos os indivíduos desapareceram da parcela 15 riacho S11B no ano de 2024 (equivalente a uma extinção local nessa parcela). A redução das taxas vitais aumentou a probabilidade de extinção (Figura 7), sendo 14% no cenário onde as taxas vitais foram reduzidas em 10%. Diferente de Ipomoea cavalcantei, onde a redução do crescimento populacional se iniciou apenas no cenário no qual as taxas vitais foram reduzidas acima de de 25%; uma redução de 25% das taxas vitais em P. cavalcantei resultou um efeito muito mais dramático, reduzindo a probabilidade de viabilidade das populações para menos de 50% (46,17%; Figura 7). Padrão similar foi observado quando comparamos as consequências genéticas devido às reduções no tamanho população de ambas as espécies (ver resultado no tópico - Consequências genéticas da redução populacional).Os resultados do nosso modelo indicam que mesmo na ausência de impacto, há uma pequena probabilidade de extinção local das populações (0.11%) em quatro anos, aumentando para até 3.45% em 10 anos. Esses resultados são coerentes com os censos observados em campo. Por exemplo, todos os indivíduos desapareceram da parcela 15 riacho S11B no ano de 2024 (equivalente a uma extinção local nessa parcela). A redução das taxas vitais aumentou a probabilidade de extinção (Figura 7), sendo 14% no cenário onde as taxas vitais foram reduzidas em 10%. Diferente de Ipomoea cavalcantei, onde a redução do crescimento populacional se iniciou apenas no cenário no qual as taxas vitais foram reduzidas acima de de 25%; uma redução de 25% das taxas vitais em P. cavalcantei resultou um efeito muito mais dramático, reduzindo a probabilidade de viabilidade das populações para menos de 50% (46,17%; Figura 7). Padrão similar foi observado quando comparamos as consequências genéticas devido às reduções no tamanho população de ambas as espécies (ver resultado no tópico - Consequências genéticas da redução populacional).
-
-```{r}
-rbind(
-  data.frame(projS11B_10,Site="S11B"),
-  data.frame(projS11C_10,Site="S11C"))%>%
-  mutate(total=rowSums(select_if(., is.numeric), na.rm = TRUE))%>%
-  mutate(Mean=mean(total),
-         Median=median(total))%>%
-  ggplot(.,aes(x=total,group=Site))+
-  geom_histogram(
-    aes(y=..count../sum(..count..),
-        fill=Site),
-    position = 'identity',color="black",alpha=.3)+
-  scale_fill_manual(values=c("#6e86e7","#ff9211"))
-```
 
 ## 9.5 Simulating different scenarios
 
@@ -1032,20 +1114,28 @@ Myviab_func<-function (matrices, n0, Nx, tmax = 50, maxruns = 10, nreps = 5000,
 sim_damage<-seq(0,0.5,by=0.05)
 sim_damage
 
+
+# My color system
+Mycolors<-c(
+  '#5e90a5', '#7e7a89', '#9e636e', '#bf4d52', '#df3637', '#ff201b', '#cc1a16', '#991310', '#660d0b', '#330605', '#000000'
+#  '#A7C7E7', '#6699CC', '#FFC857', '#FF8C42', '#FF3C38', '#D7263D', '#A01227', '#6F0E19', '#3B080F', '#000000'
+)
 ```
 
 Perform the simulation
 
-```{r, include=FALSE, echo=TRUE}
-temp<-NULL
-out<-NULL
+```{r echo=TRUE, message=FALSE, warning=FALSE, include=FALSE}
+tempS11C<-tempS11B<-temp<-NULL
+outS11C<-outS11B<-out<-NULL
 
 tmax=11   #Years simulated (from t0 to t10)
+
+# Simulation with all plots together
 for(i in 1:length(sim_damage)){
   temp<-Myviab_func(mpm_list, 
-                    n0 = Mean_indiv$Median[1:2], 
-                    Nx=Mean_indiv[3,3]/10,        #Mean_indiv[3,3]/10 representa 10% dos indivíduos médios
-                    maxruns=100,                   # Número de réplicas em cada simulação?
+                    n0 = n_init, 
+                    Nx=n_threshold,        
+                    maxruns=100,                  
                     tmax = tmax, nreps=100,
                     damage=sim_damage[i])
   out[[i]]<-data.frame(Extinct.rate=apply(temp,1,mean),
@@ -1054,6 +1144,45 @@ for(i in 1:length(sim_damage)){
                        t=seq(1,tmax,by=1))
   print(paste0("Simulating damage at ",sim_damage[i]*100,"%" ))
 }
+
+
+# Simulation considering only S11B
+for(i in 1:length(sim_damage)){
+  tempS11B<-Myviab_func(mpm_list_S11B, 
+                    n0 = n_init, 
+                    Nx=n_threshold,        
+                    maxruns=100,                   #
+                    tmax = tmax, nreps=100,
+                    damage=sim_damage[i],
+                    verbose = FALSE)
+  outS11B[[i]]<-data.frame(Extinct.rate=apply(tempS11B,1,mean),
+                       SD=apply(tempS11B,1,sd),
+                       Damage=sim_damage[i],
+                       t=seq(1,tmax,by=1),
+                    verbose = FALSE)
+  print(paste0("Simulating damage at ",sim_damage[i]*100,"%" ))
+}
+
+
+# Simulation considering only S11C
+for(i in 1:length(sim_damage)){
+  tempS11C<-Myviab_func(mpm_list_S11C, 
+                    n0 = n_init, 
+                    Nx=n_threshold,        #Mean_indiv[3,3]/10 representa 10% dos indivíduos médios
+                    maxruns=100,                   # Número de réplicas em cada simulação?
+                    tmax = tmax, nreps=100,        # Número de simulações
+                    damage=sim_damage[i],
+                    verbose = FALSE)
+  outS11C[[i]]<-data.frame(Extinct.rate=apply(tempS11C,1,mean),
+                       SD=apply(tempS11C,1,sd),
+                       Damage=sim_damage[i],
+                       t=seq(1,tmax,by=1),
+                    verbose = FALSE)
+  print(paste0("Simulating damage at ",sim_damage[i]*100,"%" ))
+}
+
+
+
 ```
 
 Calculate the number of simulations crossing the extinction threshold to extimate the persistence probability.
@@ -1064,14 +1193,14 @@ viab_para<-do.call(rbind,out)%>%
          ymin=100-((Extinct.rate-SD)*100),
          ymax=100-((Extinct.rate+SD)*100))
   
-  viab_para[viab_para>100]<-100
+viab_para[viab_para>100]<-100
 viab_para[viab_para<0]<-0
 
 
 viab_para%>%filter(t==10)
 ```
 
-```{r, fig.height=8, fig.width=14}
+```{r, fig.height=5, fig.width=12}
 viab_para%>%
   #  mutate(dano=as.factor(dano))%>%
   ggplot(.,aes(x=t-1,y=Persistprop,group=Damage))+
@@ -1081,23 +1210,110 @@ viab_para%>%
   scale_color_stepsn(
     #    colours = c("red", "yellow", "green", "yellow", "red"),
     # colours = viridis::viridis(n = 7, option = "inferno",direction=-1) ,
-    colours = rev(viridis::viridis(n = 5, option = "magma", direction = -1)))+ 
-  theme_classic(base_size=24)+
+    colours = Mycolors)+   theme_classic(base_size=24)+
   scale_x_continuous(breaks=seq(0,10,by=1),expand = c(0, 0))+
   scale_y_continuous(labels = scales::percent_format(scale = 1),
                      expand = c(0, 0),
-                     breaks=c(0,10,seq(50,200,by=50)))+
-  geom_hline(yintercept=10,color="tomato",linetype="dashed")+
+                     breaks=c(seq(0,100,by=25)))+
+#  geom_hline(yintercept=10,color="tomato",linetype="dashed")+
   labs(color="Impact/Reduction (%)",
-       y="Population size",
+       y="Persistence probability",
        x="Years projected")+
   theme(legend.position="right")
 ```
+
+
+```{r}
+viab_para%>%filter(t==10)%>%
+  mutate(Extinct.rate=Extinct.rate*100,
+         SD=SD*100)
+```
+
+```{r}
+viab_S11B<-do.call(rbind,outS11B)%>%
+  mutate(Persistprop=100-(Extinct.rate*100),
+         ymin=100-((Extinct.rate-SD)*100),
+         ymax=100-((Extinct.rate+SD)*100))
+  
+
+viab_S11B[viab_S11B>100]<-100
+viab_S11B[viab_S11B<0]<-0
+
+viab_S11C<-do.call(rbind,outS11C)%>%
+  mutate(Persistprop=100-(Extinct.rate*100),
+         ymin=100-((Extinct.rate-SD)*100),
+         ymax=100-((Extinct.rate+SD)*100))
+  
+viab_S11C[viab_S11C>100]<-100
+viab_S11C[viab_S11C<0]<-0
+
+
+
+viab_S11B%>%filter(t==10)%>%filter(t==10)%>%
+  mutate(Extinct.rate=Extinct.rate*100,
+         SD=SD*100)
+
+
+viab_S11C%>%filter(t==10)%>%filter(t==10)%>%
+  mutate(Extinct.rate=Extinct.rate*100,
+         SD=SD*100)
+
+
+```
+
+
+```{r, fig.height=8, fig.width=18}
+cowplot::plot_grid(labels = "AUTO",label_size=24,
+  do.call(rbind,outS11B)%>%
+  #  mutate(dano=as.factor(dano))%>%
+  ggplot(.,aes(x=t-1,y=Extinct.rate*100,group=Damage))+
+  geom_line(aes(color=Damage*100))+
+  geom_pointrange(aes(ymin=(Extinct.rate-SD)*100, ymax=(Extinct.rate+SD)*100,color=Damage*100))+
+  #  viridis::scale_color_viridis(option="magma")+
+  scale_color_stepsn(
+    #    colours = c("red", "yellow", "green", "yellow", "red"),
+    # colours = viridis::viridis(n = 7, option = "inferno",direction=-1) ,
+    colours = Mycolors)+   theme_classic(base_size=19)+
+  scale_x_continuous(breaks=seq(0,10,by=1),expand = c(0, 0))+
+  scale_y_continuous(labels = scales::percent_format(scale = 1),
+                     expand = c(0, 0),
+                     breaks=c(seq(0,100,by=25)))+
+  labs(color="Impact/Reduction (%)",
+       y="Extinction probability",
+       x="Years projected",
+       title="S11B")+
+  theme(legend.position="bottom"),
+  
+  
+  do.call(rbind,outS11C)%>%
+  #  mutate(dano=as.factor(dano))%>%
+  ggplot(.,aes(x=t-1,y=Extinct.rate*100,group=Damage))+
+  geom_line(aes(color=Damage*100))+
+  geom_pointrange(aes(ymin=(Extinct.rate-SD)*100, ymax=(Extinct.rate+SD)*100,color=Damage*100))+
+  #  viridis::scale_color_viridis(option="magma")+
+  scale_color_stepsn(
+    #    colours = c("red", "yellow", "green", "yellow", "red"),
+    # colours = viridis::viridis(n = 7, option = "inferno",direction=-1) ,
+    colours = Mycolors)+   theme_classic(base_size=19)+
+  scale_x_continuous(breaks=seq(0,10,by=1),expand = c(0, 0))+
+  scale_y_continuous(labels = scales::percent_format(scale = 1),
+                     expand = c(0, 0),
+                     breaks=c(seq(0,100,by=25)))+
+  labs(color="Impact/Reduction (%)",
+       y="Extinction probability per plot",
+       x="Years projected",
+       title="S11C")+
+  theme(legend.position="bottom")
+)
+  
+  
+```
+
+
+
 
 # Glossary
 
 C
 
 :   C: is a matrix somehow
-
-[^1]: This working example helps to visualise how vital rates are organized in the matrix.

@@ -167,12 +167,35 @@ MPMsA3<-MPMsA3[unlist(lapply(MPMsA3,is.null))==FALSE]
 #'=========================================================================
 library(scales)
 
+
+# Accessory function to facilite reading too small values
+scientific_10 <- function(x) {
+  parse(text=gsub("e", " %*% 10^", scales::scientific_format()(x)))
+}
+
+
+
+# Defina a função para calcular a diferença relativa
+calculate_relative_difference <- function(estimated_matrix, expected_matrix) {
+  # (estimado - esperado) / estimado
+  # Atenção: Se algum elemento em estimated_matrix for zero,
+  # o resultado para aquele elemento será Inf, -Inf ou NaN,
+  # o que é matematicamente correto para esta definição de erro relativo.
+  (estimated_matrix - expected_matrix) / expected_matrix
+}
+
+
+
 ## A2
 VRs_difA2<-MPMs_difA2<-list()
 for(i in 1:length(MPMsA2)){
-  MPMs_difA2[[i]]<-Map(`-`, MPMsA2[[i]], list(A2)) #Check difference between each MPM estimated and A2
-  #Organize into a data frame
-  VRs_difA2[[i]]<-lapply(MPMs_difA2[[i]],as.vector)%>%
+  # Aplica a função personalizada usando Map
+  # estimated_matrix virá de MPMsA2[[i]] (cada matriz estimada)
+  # expected_matrix virá de A2 (a matriz de referência)
+  MPMs_difA2[[i]] <- Map(calculate_relative_difference, MPMsA2[[i]], list(A2))
+
+  # O restante do seu código para organizar em um data frame permanece o mesmo
+  VRs_difA2[[i]] <- lapply(MPMs_difA2[[i]], as.vector) %>%
     do.call(rbind,.)%>%data.frame(.,census=paste(i+2))
 }
 
@@ -184,9 +207,13 @@ apply(VRs_difA2[[1]][,-5],2,sd)
 ## A3
 VRs_difA3<-MPMs_difA3<-list()
 for(i in 1:length(MPMsA3)){
-  MPMs_difA3[[i]]<-Map(`-`, MPMsA3[[i]], list(A3)) #Check difference between each MPM estimated and A3
-  #Organize into a data frame
-  VRs_difA3[[i]]<-lapply(MPMs_difA3[[i]],as.vector)%>%
+  # Aplica a função personalizada usando Map
+  # estimated_matrix virá de MPMsA2[[i]] (cada matriz estimada)
+  # expected_matrix virá de A2 (a matriz de referência)
+  MPMs_difA3[[i]] <- Map(calculate_relative_difference, MPMsA3[[i]], list(A3))
+
+  # O restante do seu código para organizar em um data frame permanece o mesmo
+  VRs_difA3[[i]] <- lapply(MPMs_difA3[[i]], as.vector) %>%
     do.call(rbind,.)%>%data.frame(.,census=paste(i+2))
 }
 
@@ -217,16 +244,36 @@ VRs_dif_df<-rbind(
 
 VRs_dif_df
 
+A3
 
-# Including matrix A3 for comparison
+
 VRs_dif_df%>%
-  #filter(matrix=="A3")%>%
+filter(matrix=="A3")%>%
   ggplot(.,aes(x=census,y=Mean,group=census))+
   geom_pointrange(aes(ymin=Mean-SD,ymax=Mean+SD,
                       group=census,color=census,shape=matrix),
                   position = position_dodge2(width = 0.7))+
   ylab("Error")+xlab("# censuses")+
-  scale_y_continuous(label=scientific_10)+
+    scale_y_continuous(label=scientific_10,
+      limits=c(-1*10^-15,1*10^-15))+
+  scale_color_manual(values=c(
+    '#ff6347', '#6e8ab6', '#5b7bb3', '#496daf', '#375fa9', '#2350a4', '#00429d'))+
+  geom_hline(yintercept=0,color="red",linetype=2)+
+  scale_x_discrete(labels=function(l) parse(text=l))+
+  theme_minimal(base_size=16)+
+  facet_wrap(.~stages,scales="free",ncol=3)
+
+
+
+VRs_dif_df%>%
+#filter(matrix=="A3")%>%
+  ggplot(.,aes(x=census,y=Mean,group=census))+
+  geom_pointrange(aes(ymin=Mean-SD,ymax=Mean+SD,
+                      group=census,color=census,shape=matrix),
+                  position = position_dodge2(width = 0.7))+
+  ylab("Error")+xlab("# censuses")+
+    scale_y_continuous(label=scientific_10,
+      limits=c(-1*10^-11,1*10^-11))+
   scale_color_manual(values=c(
     '#ff6347', '#6e8ab6', '#5b7bb3', '#496daf', '#375fa9', '#2350a4', '#00429d'))+
   geom_hline(yintercept=0,color="red",linetype=2)+
