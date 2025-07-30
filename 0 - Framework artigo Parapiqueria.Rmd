@@ -1410,6 +1410,14 @@ cowplot::plot_grid(labels = "AUTO",label_size=24,
   
 ```
 
+
+# 10. Data from Seed experiments and genetic diversity
+```r
+source("Seed experiment integration.R")
+```
+
+
+
 # Glossary
 
 C
