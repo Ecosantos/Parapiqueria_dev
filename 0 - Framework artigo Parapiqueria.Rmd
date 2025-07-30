@@ -80,7 +80,7 @@ library(openxlsx)
 library(ggrepel)
 library(ggridges)
 library(broom)
-
+library(car)
 set.seed(1)
 sessionInfo()
 
@@ -275,7 +275,7 @@ Check theoretical distribution better describe abundance in plots and years: poi
 
 ```{r}
 Census_all_max%>%
-mutate(year=as.numeric(year))%>%
+mutate(year=as.factor(year))%>%
 nest(data = -stage)%>%
  mutate(
     AIC_neg.bin = map(data, ~ AIC(MASS::glm.nb(value ~ year*Site, data = .))),
@@ -288,18 +288,18 @@ nest(data = -stage)%>%
 Census_all_max
 
 ```{r}
-Census_all_max%>%
-#  filter(!c(year%in%c("2025")))%>%
-mutate(year=as.numeric(year))%>%
-nest(data = -stage)%>%
- mutate(
-    fit = map(data, ~ MASS::glm.nb(value ~ year*Site, data = .)),
-    tidy_fit = map(fit, ~ tidy(.) %>% mutate(across(c(estimate, p.value), ~ round(., 3))))
+Census_all_max %>%
+  mutate(year = as.numeric(year)) %>%
+  nest(data = -stage) %>%
+  mutate(
+    fit = map(data, ~ MASS::glm.nb(value ~ Site*year, data = .)),
+    anova = map(fit, ~ Anova(., type = 2)),
+    tidy_anova = map(anova, ~ broom::tidy(.) %>%
+                       mutate(across(where(is.numeric), round, 4)))
   ) %>%
-  unnest(tidy_fit)%>%mutate(across(where(is.numeric), ~round(.x, 4)))%>%
-group_by(stage)%>%
-select(-c(fit,data))%>%
-group_split() # %>% map(~ as.data.frame(.x)) # To see other digits and solve a bug with tibble.
+  select(stage, tidy_anova) %>%
+  group_by(stage)%>%
+  unnest()%>%  group_split() # %>% map(~ as.data.frame(.x)) # To see other digits and solve a bug with tibble.
 ```
 
 Plot abundance across years and streams
@@ -799,21 +799,22 @@ Differences in vital rates
 
 #Stasis
 vr.df%>%
-filter(vital_rate=="S1")%>%
-mutate(year=scale(as.numeric(year)))%>%   #Scale here is important to guarantee that the thousand is not important!
-  glm(value~Site*year,data=.)%>%summary()
+  filter(vital_rate=="S1")%>%
+  mutate(year=as.factor(year))%>%   #Scale here is important to guarantee that the thousand is not important!
+  glm(value~Site*year,data=.)%>%Anova(type = 2)
 
 #Maturation
 vr.df%>%
-filter(vital_rate=="S2")%>%
-mutate(year=scale(as.numeric(year)))%>%   
- glm(value~Site*year,data=.)%>%summary()
+  filter(vital_rate=="S2")%>%
+  mutate(year=as.factor(year))%>%   
+  glm(value~Site*year,data=.)%>%Anova(type = 2)
 
 #Recruitment
 vr.df%>%
-filter(vital_rate=="R")%>%
-mutate(year=scale(as.numeric(year)))%>%   
-  glm(value~Site*year,data=.)%>%summary()
+  filter(vital_rate=="R")%>%
+  mutate(year=as.factor(year))%>%   
+  glm(value~Site*year,data=.)%>%Anova(type = 2)
+
 
 ```
 
@@ -839,8 +840,8 @@ lamb_df%>%statrep(., group_vars = c("Year","Site"),value_var = "Lambda")%>%arran
 
 ```{r}
 lamb_df%>%
-mutate(Year=scale(as.numeric(Year)))%>%
-glm(Lambda~Site*Year,data=.)%>%summary()
+mutate(Year=as.factor(Year))%>%
+glm(Lambda~Site*Year,data=.)%>%Anova(type = 2)
 ```
 
 ### 7.2.2. Checking if vital rates are correlated to year
@@ -1379,7 +1380,7 @@ cowplot::plot_grid(labels = "AUTO",label_size=24,
                      expand = c(0, 0),
                      breaks=c(seq(0,100,by=25)))+
   labs(color="Impact/Reduction (%)",
-       y="Extinction probability",
+       y="Extinction probability per plot",
        x="Years projected",
        title="S11B")+
   theme(legend.position="bottom"),
