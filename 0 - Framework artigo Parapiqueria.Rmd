@@ -506,7 +506,7 @@ digraph lifecycle {
   J -> J [label = <S<sub>1,1</sub>>, color = 'grey']
 
   # Transição para adulto
-  J -> A [label = <S<sub>1,2</sub>>, color = 'grey']
+  J -> A [label = <M<sub>1,2</sub>>, color = 'grey']
 }
 ")
 
@@ -522,7 +522,7 @@ $$
 A=
 \begin{bmatrix}
 S_{1,1} & R_{1,2} \\
-S_{2,1} & 0 \\
+M_{2,1} & 0 \\
 \end{bmatrix}
 $$
 
@@ -532,7 +532,7 @@ $$
 U = 
 \left(\begin{array}{ccc}  
 S_{1,1} & 0 \\
-S_{2,1} & 0 \\
+M_{2,1} & 0 \\
 \end{array}\right)
 ~~~~~\text{and}~~~~~~~
 F = \left(\begin{array}{ccc}  
@@ -543,7 +543,7 @@ $$
 
 The respective MPM represents the individuals transition during the period Mar-May, represented by $U$
 
-Non-zero elements in matrix $U$ are $S_{1,1}$ and $S_{2,1}$.
+Non-zero elements in matrix $U$ are $S_{1,1}$ and $M_{2,1}$.
 
 Once the matrix to represent our studied species' life cycle is defined, we can create the MPM for our hypothetical species. This is an important step to guide determine the necessary components to run the `QPmat` function
 
@@ -570,14 +570,14 @@ C =
 ~~~~~~~~ \text{representing,} ~~~~~  
 \begin{array}{c}
   \ S_{1,1} ≥ 0 \\
-  \ S_{2,1} ≥ 0\\
-  \ S_{1,1} + S_{2,1} ≤ 1 \\
+  \ M_{2,1} ≥ 0\\
+  \ S_{1,1} + M_{2,1} ≤ 1 \\
 \end{array}
 $$
 
 -   $S_{1,1} ≥ 0$ and $S_{1,1} ≥ 0$ means that components of the $U$ matrix cannot lower than 0.
 
--   Also, the transition of juveniles to adults and stasis $S_{1,1} + S_{2,1} ≤ 1$ cannot be greater than 1.
+-   Also, the transition of juveniles to adults and stasis $S_{1,1} + M_{2,1} ≤ 1$ cannot be greater than 1.
 
 To construct the C matrix in R, we do:
 
@@ -868,28 +868,35 @@ vr.df%>%
 ```
 
 ```{r, fig.width=14,fig.height=5}
-vr_plot<-vr.df%>%
-  statrep(., group_vars = c("vital_rate","year","Site"))%>%
-  # filter(vital_rate!="R")%>%
-  mutate(VR=ifelse(vital_rate=="R","Recruitment","Survival"))%>%
-  mutate(stages=case_when(vital_rate=="S1"~ "Stasis[Immat]",
-                          vital_rate=="S2"~ "Maturation[Immat.>Adult]",
-                          vital_rate=="R"~ "Recruitment",
-                          vital_rate=="S4"~ "Surv[Adult]"))%>%
-  mutate(stages=forcats::fct_relevel(stages, c("Stasis[Immat]","Maturation[Immat.>Adult]", "Surv[Adult]","Recruitment")))%>%
-  filter(!(vital_rate %in% c("S4")))%>%
-  filter(!c(vital_rate=="R" & year==2025))%>%
-  ungroup()%>%
-  ggplot(.,aes(y=Mean,x=year,group=Site))+
-  geom_pointrange(aes(ymin=Mean-SE,ymax=Mean+SE,color=Site,shape=year),alpha=0.8,
-                  position = position_dodge2(width = 0.4))+
-#  scale_x_discrete(labels=function(l) parse(text=l))+
-  scale_x_discrete(drop=TRUE)+
-  scale_color_manual(values=c("#ff9211","#6e86e7"))+
-  theme_bw(base_size=24)+
-  theme(legend.position="bottom")+
-  facet_wrap(.~stages,scales="free")+
-  xlab(NULL)+ylab(NULL)
+vr_plot<-vr.df %>%
+  statrep(., group_vars = c("vital_rate","year","Site")) %>%
+  mutate(VR = ifelse(vital_rate == "R", "Recruitment", "Survival")) %>%
+  mutate(stages = case_when(
+    vital_rate == "S1" ~ "Stasis~(S[\"1,1\"])",
+    vital_rate == "S2" ~ "Maturation~(M[\"2,1\"])",
+    vital_rate == "R"  ~ "Recruitment (R)",
+    vital_rate == "S4" ~ "Surv[Adult]"
+  )) %>%
+  mutate(stages = forcats::fct_relevel(stages, 
+                                       c("Stasis~(S[\"1,1\"])", "Maturation~(M[\"2,1\"])", "Surv[Adult]", "Recruitment (R)"))) %>%
+  filter(!(vital_rate %in% c("S4"))) %>%
+  filter(!(vital_rate == "R" & year == 2025)) %>%
+  ungroup() %>%
+  ggplot(aes(y = Mean, x = year, group = Site)) +
+  geom_pointrange(
+    aes(ymin = Mean - SE, ymax = Mean + SE, color = Site, shape = year),
+    alpha = 0.8,
+    position = position_dodge2(width = 0.4), size = 1.2
+  ) +
+  scale_x_discrete(drop = TRUE) +
+  scale_color_manual(values = c("#ff9211", "#6e86e7")) +
+  theme_bw(base_size = 24) +
+  theme(legend.position = "bottom") +
+  facet_wrap(
+    . ~ stages, scales = "free",
+    labeller = label_parsed
+  ) +
+  xlab(NULL) + ylab(NULL)
 
 vr_plot
 ```
@@ -920,11 +927,11 @@ lamb_df%>%statrep(., group_vars = c("Year","Site"),value_var = "Lambda")
 ```{r,fig.height=5, fig.width=8}
 lamb_plot<-lamb_df%>%
   statrep(., group_vars = c("Site","Year"),value_var = "Lambda")%>%
-  mutate(VAR="Population Growth rate")%>%
+  mutate(VAR="Population growth rate (λ)")%>%
   ggplot(.,aes(y=Mean,x=Year,group=Site))+
   geom_hline(yintercept=1,col="black", linetype="longdash")+
   geom_pointrange(aes(ymin=Mean-SE,ymax=Mean+SE,color=Site,shape=Year),alpha=0.8,
-                  position = position_dodge2(width = 0.7))+
+                  position = position_dodge2(width = 0.7),size=1.2)+
   #  geom_line(aes(color = Site, group = Site), 
   #            position = position_dodge2(width = 0.7))+
   scale_x_discrete(labels=function(l) parse(text=l))+
@@ -932,7 +939,8 @@ lamb_plot<-lamb_df%>%
   theme_bw(base_size=24)+
   theme(legend.position="right")+
 #  facet_grid(.~VAR)+
-ylab(expression("Population growth rate ("~lambda~")" ))+ xlab("Years")
+ylab("λ")+ 
+  xlab("Years")
 
 lamb_plot
 ```
@@ -946,15 +954,27 @@ p3$data<-vr_plot$data%>%filter(vital_rate=="R")
 
 
 
-cowplot::plot_grid(ncol=2,labels="AUTO",
-#Top
- p1+ theme(legend.position="none"),
- p2+theme(legend.position="none"),
-# Bottom
-  p3+theme(legend.position="none"),
-lamb_plot+facet_wrap(.~VAR)+theme(legend.position="none")+xlab(NULL)+ylab(NULL))
+legend <- cowplot::get_legend(
+  p1 + theme(legend.position = "bottom", legend.box.margin = margin(t = 10))
+)
 
-ggsave(filename="Figures/Raw figures/Figure2.svg",height=8,width=15,dpi=600)
+cowplot::plot_grid(
+  #Body
+  cowplot::plot_grid(
+    ncol=2,labels="AUTO",
+    #Top
+    p1+ theme(legend.position="none")+ylab("Transition probability"),
+    p2+theme(legend.position="none")+ylab("Transition probability"),
+    # Bottom
+    p3+theme(legend.position="none")+ylab("Recruited indiv. per capita"),
+    lamb_plot+facet_wrap(.~VAR)+theme(legend.position="none")+xlab(NULL)
+  ),
+  legend,
+  ncol = 1,
+  rel_heights = c(1, 0.1)  # Ajuste a altura da legenda se quiser
+)%>%print()
+
+ggsave(filename="Figures/Raw figures/Figure2.pdf",height=8,width=15,dpi=600)
 ```
 
 
@@ -1011,7 +1031,7 @@ vr_perf%>%
   geom_col()+
   facet_grid(.~variable,scales="free")+
   theme_minimal(base_size=24)+
-  xlab(NULL)+ylab(expression("Proportonal contribution to "~lambda)),
+  theme(axis.text.x = element_text(angle = 75, hjust = 1))+  xlab(NULL)+ylab(expression("Proportonal contribution to "~lambda)),
 vr_perf%>%
   pivot_longer(!c(vr, LTRE_sd),names_to="variable",values_to="values")%>%
     mutate(stages=case_when(vr=="S11"~ "Stasis[Immat]",
@@ -1025,9 +1045,18 @@ vr_perf%>%
   geom_col()+
   facet_grid(.~variable,scales="free")+
   theme_minimal(base_size=24)+
+  theme(axis.text.x = element_text(angle = 75, hjust = 1))+
   xlab(NULL)+
   ylab(expression("Observed contribution to "~lambda )))
   
+
+#ggsave(
+#  filename = "Figures/Raw figures/figura 5.pdf",
+#  width = 24,               
+#  height = 16,              
+#  units = "cm",
+#  dpi = 300                 
+#)
 ```
 
 ## 8.2. Life table response by year
@@ -1407,7 +1436,13 @@ cowplot::plot_grid(labels = "AUTO",label_size=24,
   theme(legend.position="bottom")
 )
   
-  
+ggsave(
+  filename = "Figures/Raw figures/figura 6.pdf",
+  width = 30,               
+  height = 12,              
+  units = "cm",
+  dpi = 300                 
+)
 ```
 
 

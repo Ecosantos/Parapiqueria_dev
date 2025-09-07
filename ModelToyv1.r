@@ -18,7 +18,7 @@ require(tidyverse)
 
 # Create two matrices
 vr <- list(seed_surv=0.1 , s0=0.3,s1=0.7, s2=0.3,f2=0)
-vr2 <- list(seed_surv=0.1 , s0=0.3,s1=0.7, s2=0,f2=0) #Force S2 adult surviva to zero
+vr2 <- list(seed_surv=0.1 , s0=0.3,s1=0.7, s2=0,f2=0) #Force S2 adult survival to zero
 stages<-c("seed","Juvenile","Adult")
 
 pre <- expression(matrix2(c(
@@ -249,35 +249,39 @@ A3
 
 VRs_dif_df%>%
 filter(matrix=="A3")%>%
+  mutate(stages = case_when(
+    stages == "Stasis[Immat]" ~ "Stasis~(S[\"1,1\"])",
+    stages == "Growth[Immat.>Adult]" ~ "Maturation~(M[\"2,1\"])"
+  )) %>%
+  # opcional: reordenar os níveis se necessário
+  mutate(stages = forcats::fct_relevel(
+    stages,
+    c("Stasis~(S[\"1,1\"])", "Maturation~(M[\"2,1\"])")
+  ))%>%
   ggplot(.,aes(x=census,y=Mean,group=census))+
   geom_pointrange(aes(ymin=Mean-SD,ymax=Mean+SD,
                       group=census,color=census,shape=matrix),
-                  position = position_dodge2(width = 0.7))+
-  ylab("Error")+xlab("# censuses")+
+                  position = position_dodge2(width = 0.7),size=1.05)+
+  ylab("Error")+xlab("Number of censuses")+
     scale_y_continuous(label=scientific_10,
       limits=c(-1*10^-15,1*10^-15))+
   scale_color_manual(values=c(
-    '#ff6347', '#6e8ab6', '#5b7bb3', '#496daf', '#375fa9', '#2350a4', '#00429d'))+
-  geom_hline(yintercept=0,color="red",linetype=2)+
+    # Colour palette option 1'#ff6347', '#6e8ab6', '#5b7bb3', '#496daf', '#375fa9', '#2350a4', '#00429d'
+    # Colour palette option 2'#FFD700', '#d9f0d3', '#a6dba0', '#5aae61', '#1b7837', '#006837', '#004529'
+    '#000000', '#484848', '#595959', '#6a6a6a', '#7a7a7a', '#8c8c8c', '#9e9e9e'
+    ))+
+  geom_hline(yintercept=0,color="tomato",linetype=2)+
   scale_x_discrete(labels=function(l) parse(text=l))+
   theme_minimal(base_size=16)+
-  facet_wrap(.~stages,scales="free",ncol=3)
+  facet_wrap(.~stages, scale="free",labeller = label_parsed,ncol=2)
 
 
+ggsave(
+  filename = "Figures/Raw figures/figura 4.pdf",
+  width = 24,               
+  height = 10,              
+  units = "cm",
+  dpi = 300                 
+)
 
-VRs_dif_df%>%
-#filter(matrix=="A3")%>%
-  ggplot(.,aes(x=census,y=Mean,group=census))+
-  geom_pointrange(aes(ymin=Mean-SD,ymax=Mean+SD,
-                      group=census,color=census,shape=matrix),
-                  position = position_dodge2(width = 0.7))+
-  ylab("Error")+xlab("# censuses")+
-    scale_y_continuous(label=scientific_10,
-      limits=c(-1*10^-11,1*10^-11))+
-  scale_color_manual(values=c(
-    '#ff6347', '#6e8ab6', '#5b7bb3', '#496daf', '#375fa9', '#2350a4', '#00429d'))+
-  geom_hline(yintercept=0,color="red",linetype=2)+
-  scale_x_discrete(labels=function(l) parse(text=l))+
-  theme_minimal(base_size=16)+
-  facet_wrap(.~stages,scales="free",ncol=3)
 

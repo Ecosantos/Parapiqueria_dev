@@ -52,7 +52,7 @@ mutate(across(-Treatment, as.numeric))
 
 colnames(germination)<-c("Site","Viables","Viab.rate","Germinated","Germ.rate","Time")
 
-colnames(dadosclean)<-c("Riacho","Viaveis","Viab.rate","Germinada","Germ.rate","Tempo")
+#colnames(dadosclean)<-c("Riacho","Viaveis","Viab.rate","Germinada","Germ.rate","Tempo")
 
 t.test(germination$Germinated~ germination$Site)
 t.test(germination$Germ.rate~ germination$Site)
@@ -63,8 +63,6 @@ t.test(germination$Viab.rate~ germination$Site)
 # Check if both streams have six replicates
 ndados<-table(germination$Site)
 ndados[1] == ndados[2]
-
-
 
 
 #-----------------------------------------------------------
@@ -126,7 +124,7 @@ ggplot(.,aes(x=Site,y=Mean))+
 geom_pointrange(aes(ymin=lower95,ymax=higher95,linetype=Sig,color=Site,shape=Sig))+
 scale_color_manual(values=c("#ff9211","#6e86e7"))+
 scale_shape_manual(values=c(21,19))+
-scale_linetype_manual(values=c(2))+
+scale_linetype_manual(values=c(1))+
 facet_grid(.~Facet_name)+
 labs(y="Viable seeds (%)",
 	x=NULL)+
@@ -144,17 +142,17 @@ summarise(Mean=mean(Values),
 		SD=sd(Values),
 		lower95=quantile(Values,.025),          # Mais efetivo para caracterizar a distribuição                                                   empiríca não normal de uma amostra.
 		higher95=quantile(Values,.975))%>%
-mutate(Sig=case_when(VAR == "Germ.rate" ~"NonSig"))%>%
+mutate(Sig=case_when(VAR == "Germ.rate" ~"Sig"))%>%
 mutate(Site=ifelse(Site=="Riacho 1","S11C","S11B"))%>%
 mutate(VAR=factor(VAR, levels = c("Germ.rate","Time","Viab.rate")))%>%
 mutate(Facet_name="Germination")%>%
 ggplot(.,aes(x=Site,y=Mean))+
 geom_pointrange(aes(ymin=lower95,ymax=higher95,linetype=Sig,color=Site,shape=Sig))+
 scale_color_manual(values=c("#ff9211","#6e86e7"))+
-scale_shape_manual(values=c(21,19))+
+#scale_shape_manual(values=c(21,19))+
 scale_linetype_manual(values=c(1))+
 facet_grid(.~Facet_name)+
-labs(y="Germinated seeds (%)",
+labs(y="Germinated \nseeds (%)",
 	x=NULL)+
 theme_bw(base_size=20)
 
@@ -203,7 +201,8 @@ mutate(Facet_name="Mass")%>%
 ggplot(.,aes(x=Site,y=Mean))+
 geom_pointrange(aes(ymin=lower95,ymax=higher95,color=Site),linetype=1,shape=19)+
 scale_color_manual(values=c("#ff9211","#6e86e7"))+
-labs(y="Mass per \n1000 individuals (mg)",
+  scale_linetype_manual(values=c(1))+
+  labs(y="Mass per \n1000 individuals (mg)",
 	x=NULL)+
 facet_grid(.~Facet_name)+
 theme_bw(base_size=20)
@@ -212,9 +211,15 @@ massplot
 
 library(cowplot)
 
-plotlegend<-germplot+theme(legend.position="top", legend.box="vertical",
+plotlegend<-germplot+theme(legend.position="right", 
+                           legend.box="vertical",
   legend.spacing.y = unit(-0.1, "cm")  # Ajuste o valor conforme necessário
-)
+  )
+
+legend_grob <- get_plot_component(plotlegend, 
+                                  'guide-box', 
+                                  return_all = TRUE)
+
 
 massplot
 
@@ -226,7 +231,7 @@ genplot<-data.frame(Site=c("S11C","S11B"),
 mutate(VAR="Gen.Div")%>%
 mutate(Facet_name="Genetic diversity \n (Leal et al. 2025)")%>%
 ggplot(.,aes(x=Site,y=Div))+
-geom_pointrange(aes(ymin=lower,ymax=higher,color=Site),linetype=2,shape=21)+
+geom_pointrange(aes(ymin=lower,ymax=higher,color=Site),linetype=1,shape=21)+
 scale_color_manual(values=c("#ff9211","#6e86e7"))+
 labs(y="Heterozygosis",
 	x=NULL)+
@@ -246,20 +251,28 @@ MergedPlots<-plot_grid(ncol=3,  align = "v",
 		legend.position="none"),
 	massplot+theme(
 		legend.position="none"),
-	viabplot+theme(
-		legend.position="none"),
 	germplot+theme(
 		legend.position="none"),
 	germTimeplot +theme(
 		legend.position="none"),
+  viabplot+theme(
+    legend.position="none"),
 #	genplot+theme(
 #		legend.position="none")+s
 #cale_y_continuous(breaks=c(1.3,1.4,1.5))
-cowplot::ggdraw(get_plot_component(plotlegend,'guide-box-top', return_all = TRUE))
+cowplot::ggdraw() + 
+  cowplot::draw_grob(legend_grob, scale = 0.8)  # Reduz em 80%
 )	
 
 MergedPlots
 
 
-ggsave(MergedPlots,"svg",)
-
+ggsave(
+ filename = "Figures/Raw figures/figura 7.pdf",
+  plot = MergedPlots,
+  device = "pdf",
+  width = 24,        
+ height = 13,        
+  units = "cm",
+ dpi = 300           
+)
