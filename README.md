@@ -1,26 +1,21 @@
-# `Parapiqueria cavalcantei` Population Dynamics: Analysis Workflow
+# *Parapiqueria cavalcantei* Population Dynamics: Inverse methods Workflow
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-
-This repository provides the R code and data processing workflow for analyzing the population dynamics of `Parapiqueria cavalcantei`. The project's primary goal is to **facilitate the reproduction of quantitative results and analyses** from an associated scientific publication.
+This repository provides the R code and data processing workflow for analyzing the population dynamics of *Parapiqueria cavalcantei*. The project's primary goal is to **facilitate the reproduction of quantitative results and analyses** from an associated scientific publication.
 
 **Author:** Gabriel Santos\
 
-------------------------------------------------------------------------
-<!--
-## **Citing This Work**
-
-If you use this code or derived methodologies, please cite the corresponding scientific article.\
-**\[ACTION: Update this section with the full publication details once your article is peer-reviewed and published.\]**
--->
-
-------------------------------------------------------------------------
++:-----------------------------------------------------------------------------------------------------------------------------+
+| \<!-- \## **Citing This Work**                                                                                               |
++------------------------------------------------------------------------------------------------------------------------------+
+| If you use this code or derived methodologies, please cite the corresponding scientific article.\                            |
+| **\[ACTION: Update this section with the full publication details once your article is peer-reviewed and published.\]** --\> |
++------------------------------------------------------------------------------------------------------------------------------+
 
 ## Workflow Overview
 
 The core analysis is driven by the `0 - Framework artigo Parapiqueria.Rmd` file, which orchestrates the following steps:
 
-1.  **Data Preparation:** Loads and standardizes `Parapiqueria cavalcantei` census data (2022-2025) from various Excel sheets.
+1.  **Data Preparation:** Loads and standardizes *Parapiqueria cavalcantei* census data (2022-2025) from various Excel sheets.
     -   **Required Data Files:**
         -   `Data/Dados parapiqueria - Completo - Consolidado 10Jun2025.xlsx`
         -   `Data/Fecundity.xlsx` (used by `Seed experiment integration.R`)
@@ -57,6 +52,10 @@ Key custom functions facilitating the analysis include:
 
 This project is licensed under the [MIT License](LICENSE).
 
+This code is released solely for the purpose of peer review and academic transparency. It is NOT licensed for reuse, reproduction, or publication prior to the official publication of the associated scientific article. All rights are reserved by the author.
 
-This README file was generated using artificial intelligence (model Gemini 2.5 flash) to ensure clarity and comprehensiveness.
+## Disclaimer
+
+Parts of this README were generated using artificial intelligence (Gemini 2.5 Flash) to improve clarity and structure. The content was subsequently reviewed and edited by the author.
+
 ------------------------------------------------------------------------
