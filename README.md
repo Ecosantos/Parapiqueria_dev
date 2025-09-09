@@ -2,14 +2,11 @@
 
 This repository provides the R code and data processing workflow for analyzing the population dynamics of *Parapiqueria cavalcantei*. The project's primary goal is to **facilitate the reproduction of quantitative results and analyses** from an associated scientific publication.
 
-**Author:** Gabriel Santos\
+**Author:** Gabriel Santos
 
-+:-----------------------------------------------------------------------------------------------------------------------------+
-| \<!-- \## **Citing This Work**                                                                                               |
-+------------------------------------------------------------------------------------------------------------------------------+
-| If you use this code or derived methodologies, please cite the corresponding scientific article.\                            |
-| **\[ACTION: Update this section with the full publication details once your article is peer-reviewed and published.\]** --\> |
-+------------------------------------------------------------------------------------------------------------------------------+
+<!-- # **Citing This Work**                                                                                              
+If you use this code or derived methodologies, please cite the corresponding scientific article.      
+**[ACTION: Update this section with the full publication details once your article is peer-reviewed and published.]** -->
 
 ## Workflow Overview
 
@@ -57,5 +54,3 @@ This code is released solely for the purpose of peer review and academic transpa
 ## Disclaimer
 
 Parts of this README were generated using artificial intelligence (Gemini 2.5 Flash) to improve clarity and structure. The content was subsequently reviewed and edited by the author.
-
-------------------------------------------------------------------------
